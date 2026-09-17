@@ -151,15 +151,21 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
-def test_llmtr_reasoning_comes_from_the_model_id(monkeypatch):
+@pytest.mark.parametrize(
+    ("text_model", "switch"),
+    [("agnes/agnes-3.0-flash", {}), ("deepseek/deepseek-flash", {"thinking": {"type": "disabled"}})],
+)
+def test_llmtr_sends_only_the_reasoning_switch_its_model_accepts(monkeypatch, text_model, switch):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://llmtr.com/v1")
+    monkeypatch.setenv("TEXT_MODEL", text_model)
     monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
     post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
     monkeypatch.setattr(model, "post_json", post)
     model.field_text({"goal": "Fly from Zurich to London"})
+    body = post.call_args.args[2]
     assert post.call_args.args[0] == "https://llmtr.com/v1/chat/completions"
-    assert not {"reasoning", "thinking"} & set(post.call_args.args[2])
+    assert {k: body[k] for k in ("reasoning", "thinking") if k in body} == switch
 
 
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
