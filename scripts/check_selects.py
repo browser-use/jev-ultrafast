@@ -33,6 +33,25 @@ def check(browser):
         assert browser.evaluate("window.events") == ["input", "change"]
         passed.append("duplicate value selects the observed option with exactly one event pair: " + first)
 
+    browser.evaluate(
+        "document.body.innerHTML=" + json.dumps(
+            '<form><select multiple aria-label="Category">'
+            '<option value="same" selected>First</option>'
+            '<option value="keep" selected>Second</option>'
+            '<option value="same">Third</option></select></form>'
+        )
+    )
+    browser.evaluate("window.events=[]; for (const type of ['input','change']) "
+                     "document.querySelector('select').addEventListener(type,e=>window.events.push(e.type))")
+    page = browser.observe(screenshot=False)
+    action = next(a for a in page["actions"] if a["label"] == "Category → Third")
+    browser.act(action, page)
+    assert browser.evaluate(
+        "[...document.querySelector('select').selectedOptions].map(o=>o.textContent)"
+    ) == ["First", "Second", "Third"]
+    assert browser.evaluate("window.events") == ["input", "change"]
+    passed.append("multiple select adds the observed option without clearing existing selections")
+
     options = ('<option value="first">First</option>'
                '<optgroup label="Choices"><option value="second">Second</option></optgroup>')
     mutations = {
@@ -65,6 +84,7 @@ def check(browser):
         "changed value": "s.options[2].value='changed'",
         "disabled option": "s.options[2].disabled=true",
         "disabled optgroup": "s.querySelector('optgroup').disabled=true",
+        "option selected elsewhere": "s.options[2].selected=true",
         "option moved to another select":
             "const other=document.createElement('select'); document.body.append(other); other.append(s.options[2])",
     }.items():
