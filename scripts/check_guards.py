@@ -286,6 +286,19 @@ def main():
         assert not any(a["label"] == "Light action 259" for a in page["actions"])
         passed.append("candidate cap preserves composed order around an early shadow host")
 
+        browser.evaluate("""(() => {
+          document.body.innerHTML='<div id="deep-host"></div>';
+          const host=document.querySelector('#deep-host');host.style.display='none';
+          const root=host.attachShadow({mode:'open'});
+          let parent=root;
+          for (let i=0;i<12000;i++) {
+            const child=document.createElement('div');parent.append(child);parent=child;
+          }
+        })()""")
+        page = browser.observe(screenshot=False)
+        assert browser.fresh(page)
+        passed.append("deep composed traversal is stack-safe during observation and freshness checks")
+
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")

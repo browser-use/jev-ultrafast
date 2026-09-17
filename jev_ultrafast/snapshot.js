@@ -20,13 +20,15 @@
       }
       return [...node.children];
     };
-    const visit = e => {
-      if (seen.has(e)) return;
+    const stack=(start===document ? [...document.children] : children(start)).reverse();
+    while (stack.length) {
+      const e=stack.pop();
+      if (seen.has(e)) continue;
       seen.add(e);
       elements.push(e);
-      for (const child of children(e)) visit(child);
-    };
-    for (const child of start===document ? document.children : children(start)) visit(child);
+      const descendants=children(e);
+      for (let i=descendants.length-1;i>=0;i--) stack.push(descendants[i]);
+    }
     return {elements,roots};
   };
   const observed=composed(), observedRoots=observed.roots;
