@@ -63,6 +63,8 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+[LLMTR](https://llmtr.com) also works as the text helper. Use an LLMTR key with `TEXT_MODEL_BASE_URL=https://llmtr.com/v1` and `TEXT_MODEL=agnes/agnes-3.0-flash`, a free model with a daily request quota. LLMTR reads reasoning from the model id, so the helper sends no reasoning field there. The recorded timings below use OpenRouter.
+
 ## Use the library
 
 ```python

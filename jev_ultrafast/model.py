@@ -166,6 +166,8 @@ def field_text(context):
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    if "llmtr.com/" in base:
+        reasoning = {}  # LLMTR reads reasoning from the model id, e.g. a :none or :think suffix.
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",

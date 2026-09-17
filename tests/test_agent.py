@@ -151,6 +151,17 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
+def test_llmtr_reasoning_comes_from_the_model_id(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://llmtr.com/v1")
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+    model.field_text({"goal": "Fly from Zurich to London"})
+    assert post.call_args.args[0] == "https://llmtr.com/v1/chat/completions"
+    assert not {"reasoning", "thinking"} & set(post.call_args.args[2])
+
+
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
