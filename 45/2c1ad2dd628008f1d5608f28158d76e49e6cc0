@@ -1,0 +1,65 @@
+tests/test_agent.py
+  s_0ea552c519f69f::t_8f1ffc6e696705 230,233-240,242-261,263-267
+  s_0ea552c519f69f::t_be8f4373f2006c 192,198,205
+jev_ultrafast/browser.py
+  s_0ea552c519f69f::t_8f1ffc6e696705 130-131,162-163
+  s_0ea552c519f69f::t_4bad1a935927b8 7,12-13,80,88-93,96-97,101,141-161,164-166
+  s_0ea552c519f69f::t_3b8a01c43d29a4 14,188-189
+  s_0ea552c519f69f::t_8d23dbd80ac3a2 45-46,51-71,106
+  s_0ea552c519f69f::t_1e7aa3625cdf02 176
+  s_0ea552c519f69f::t_2b2b3d569d3042 94-95
+  s_0ea552c519f69f::t_3a733dc35dbae0 105,107
+  s_0ea552c519f69f::t_3627f29290b31c 47-50,72-76
+scripts/check_guards.py
+  s_0ea552c519f69f::t_cf4b54e91b37ec 127-129
+  s_0ea552c519f69f::t_2c772d30b09ef2 1-44,47-68,130-137
+  s_0ea552c519f69f::t_c446455301d9ce 45-46
+  s_0ea552c519f69f::t_8cd9defe86a607 69-122,125-126
+  s_0ea552c519f69f::t_474d6de4f59918 123-124
+jev_ultrafast/snapshot.js
+  s_0ea552c519f69f::t_c6c58438ff0311 76-77
+  s_0ea552c519f69f::t_4bad1a935927b8 44-54,93-94,98,106
+  s_0ea552c519f69f::t_24d0637af19f83 12-23
+  s_0ea552c519f69f::t_5348fd53ef8190 1-11,24-43,55-59,61-75,78-92,95-97,99-105,107
+  s_0ea552c519f69f::t_3a733dc35dbae0 60
+jev_ultrafast/agent.py
+  s_0ea552c519f69f::t_c446455301d9ce 94-96,107-108,116
+scripts/record_flights.py
+  s_0ea552c519f69f::t_4361f03a596597 4,18-23,66-68
+scripts/render_demo.py
+  s_0ea552c519f69f::t_4361f03a596597 12-15,21-22,43-44,92-93,138
+  s_0ea552c519f69f::t_6289f4d98f1626 3
+docs/design.md
+  s_0ea552c519f69f::t_9d13401addbf12 13,15,17-21,33
+scripts/measure_flights.py
+  s_0ea552c519f69f::t_ca51a397aa45dc 6,25,62-66
+  s_0ea552c519f69f::t_3627f29290b31c 26-29,60
+README.md
+  s_0ea552c519f69f::t_9d13401addbf12 9,64,94-96,108-109,116,118,120,122,130,134
+.env.example
+  s_0ea552c519f69f::t_8a7a5b21e05954 6
+docs/flights-measurement.json
+  s_0ea552c519f69f::t_8e5a62bb9aa58d 2-7,13,18-19,21-24,33-35,47-48,50-53,62-64,88-90,93-114,118,122-124,129,133-135,140,144-147,155-157,162,166-169,177-179,184,188-190,195,199-201,206,210-212,217,221-223,232-234,237
+docs/full-speed-measurement.json
+  s_0ea552c519f69f::t_8ef687e94208c9 1-895
+docs/launch-draft.md
+  s_0ea552c519f69f::t_011fefdb058cb9 1-19
+docs/performance.md
+  s_0ea552c519f69f::t_61592005c276ea 1,3,5,7,9,11-16,18,20,22,24,26,28,30,32,34,36-39,41,43,45,47,49,51,53-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "452c1ad2dd628008f1d5608f28158d76e49e6cc0",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
