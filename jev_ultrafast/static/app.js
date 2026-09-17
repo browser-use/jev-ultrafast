@@ -1,3 +1,13 @@
+const pageEffect = (changed) =>
+  changed === true
+    ? "Page changed"
+    : changed === false
+      ? "No change observed"
+      : "Outcome not observed";
+
+if (typeof module !== "undefined") module.exports = { pageEffect };
+
+if (typeof document !== "undefined") {
 const $ = (id) => document.getElementById(id);
 const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
@@ -18,12 +28,6 @@ const escape = (value) =>
       ],
   );
 const percent = (value) => `${(value * 100).toFixed(value < 0.01 ? 1 : 0)}%`;
-const pageEffect = (changed) =>
-  changed === true
-    ? "Page changed"
-    : changed === false
-      ? "No change observed"
-      : "Outcome not observed";
 async function call(name, body = {}) {
   const response = await fetch(`/api/${name}`, {
     method: "POST",
@@ -248,3 +252,4 @@ fetch("/api/state")
   .catch(() => {
     $("status").textContent = "Cannot reach local demo server";
   });
+}

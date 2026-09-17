@@ -126,6 +126,7 @@ A `DONE` choice still requires independent outcome verification. The DOM reader 
 ```bash
 uv run ruff check .
 uv run pytest
+node --test tests/test_app.js
 node --check jev_ultrafast/static/app.js
 node --check jev_ultrafast/snapshot.js
 uv build
