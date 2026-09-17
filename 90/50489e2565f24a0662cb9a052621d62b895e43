@@ -1,0 +1,24 @@
+jev_ultrafast/browser.py
+  s_0ea552c519f69f::t_3ac898025a5679 5,10,23-27
+jev_ultrafast/agent.py
+  s_0ea552c519f69f::t_87f4f8c117f54a 13,17-19,78,105,107
+tests/test_agent.py
+  s_0ea552c519f69f::t_87f4f8c117f54a 164
+  s_0ea552c519f69f::t_d73ce1b8f511ee 322-363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9050489e2565f24a0662cb9a052621d62b895e43",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
