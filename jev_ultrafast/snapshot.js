@@ -6,16 +6,30 @@
     const id=cache.ids.get(e); cache.nodes.set(id,e); return id;
   };
   for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
-  const roots = (start=document) => {
-    const found=[start];
-    if (start.shadowRoot) found.push(start.shadowRoot);
-    for (let i=0;i<found.length;i++)
-      for (const e of found[i].querySelectorAll('*')) if (e.shadowRoot) found.push(e.shadowRoot);
-    return found;
-  };
   const query = (selector,found) => found.flatMap(root=>[...root.querySelectorAll(selector)]);
-  const all = (selector,start=document) => query(selector,roots(start));
-  const observedRoots=roots();
+  const composed = (start=document) => {
+    const elements=[], roots=start===document ? [document] : [], seen=new Set();
+    const children = node => {
+      if (node.tagName==='SLOT') {
+        const assigned=node.assignedNodes({flatten:true});
+        return assigned.length ? assigned.filter(n=>n.nodeType===1) : [...node.children];
+      }
+      if (node.shadowRoot) {
+        roots.push(node.shadowRoot);
+        return [...node.shadowRoot.children];
+      }
+      return [...node.children];
+    };
+    const visit = e => {
+      if (seen.has(e)) return;
+      seen.add(e);
+      elements.push(e);
+      for (const child of children(e)) visit(child);
+    };
+    for (const child of start===document ? document.children : children(start)) visit(child);
+    return {elements,roots};
+  };
+  const observed=composed(), observedRoots=observed.roots;
   const parent = e => e?.assignedSlot || e?.parentElement || e?.getRootNode?.().host || null;
   const closest = (e,selector) => {
     for (let node=e;node;node=parent(node)) if (node.matches?.(selector)) return node;
@@ -57,7 +71,7 @@
     }
     return null;
   };
-  cache.pageKey=(found=roots())=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
+  cache.pageKey=(found=composed().roots)=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
     query('input,textarea,select',found).filter(safe)
       .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
   cache.guard=e=>{
@@ -70,11 +84,12 @@
       e.getAttribute('href'),(scope?.innerText??scope?.textContent??'').slice(0,6000)];
   };
   const actions=[];
-  for (const e of query(selector,observedRoots)) {
+  for (const e of observed.elements) {
+    if (!e.matches(selector)) continue;
     if (!safe(e) || !visible(e) || e.matches(':disabled') || closest(e,'[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
-    if (rname==='gridcell' && all('button,[role="button"]',e).length) continue;
+    if (rname==='gridcell' && composed(e).elements.some(child=>child.matches('button,[role="button"]'))) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
     for (const key of ['checked','selected','expanded']) {
@@ -101,7 +116,7 @@
     const walker=document.createTreeWalker(root===document ? document.body : root,NodeFilter.SHOW_TEXT);
     let node;
     while ((node=walker.nextNode()) && length<6000) {
-      const value=node.textContent.trim(), owner=node.parentElement;
+      const value=node.textContent.trim(), owner=node.parentElement||root.host;
       if (!value || !owner || closest(owner,'script,style,noscript,template') || !visible(owner)) continue;
       range.selectNodeContents(node); const r=range.getBoundingClientRect();
       if (r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight && r.right>0 && r.left<innerWidth) {

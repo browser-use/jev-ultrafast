@@ -172,8 +172,8 @@ def browser_operation(request):
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !closest(o,'optgroup[disabled]'))) return null;
                 e.value=action.value;
-                e.dispatchEvent(new Event('input',{bubbles:true}));
-                e.dispatchEvent(new Event('change',{bubbles:true}));
+                e.dispatchEvent(new Event('input',{bubbles:true,composed:true}));
+                e.dispatchEvent(new Event('change',{bubbles:true,composed:true}));
               }
               return {x,y};
             })(""" + json.dumps(action) + ")")

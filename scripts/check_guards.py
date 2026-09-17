@@ -141,7 +141,11 @@ def main():
             </select>
             <button id="slotted"><slot name="label"></slot></button>
             <slot name="suppressed" aria-hidden="true"></slot>
+            <fieldset disabled><button>Disabled fieldset action</button></fieldset>
+            <div aria-disabled="true"><button>ARIA-disabled shadow action</button></div>
+            <div inert><button>Inert shadow action</button></div>
             <div id="nested-host"></div>`;
+          root.append(document.createTextNode(' Direct shadow text '));
           root.querySelector('#save').addEventListener('click',()=>window.shadowClicks=(window.shadowClicks||0)+1);
           root.querySelector('#slotted').addEventListener('click',()=>window.slottedClicks=(window.slottedClicks||0)+1);
           root.querySelector('#city').addEventListener('input',()=>requestAnimationFrame(()=>{
@@ -159,10 +163,15 @@ def main():
           hidden.innerHTML='<button>Hidden shadow action</button>';
           const closed=document.querySelector('#closed-host').attachShadow({mode:'closed'});
           closed.innerHTML='<button>Closed shadow action</button>';
+          window.shadowSelectEvents=[];
+          for (const type of ['input','change']) document.addEventListener(type,event=>{
+            if (event.composedPath()[0]?.id==='shadow-category') window.shadowSelectEvents.push(type);
+          });
         })()""")
         page = browser.observe(screenshot=False)
         actions = page["actions"]
         assert "Shadow panel content" in page["text"]
+        assert "Direct shadow text" in page["text"]
         assert any(a["label"] == "City" and a["kind"] == "fill" for a in actions)
         assert any(a["label"] == "Save shadow form" for a in actions)
         assert any(a["label"] == "Slotted action" for a in actions)
@@ -172,9 +181,12 @@ def main():
             "Hidden shadow" in a["label"]
             or "Closed shadow" in a["label"]
             or "Suppressed slotted" in a["label"]
+            or "Disabled fieldset" in a["label"]
+            or "ARIA-disabled shadow" in a["label"]
+            or "Inert shadow" in a["label"]
             for a in actions
         )
-        passed.append("open and nested shadow controls observed; hidden and closed roots excluded")
+        passed.append("shadow text and controls observed; hidden, closed, disabled, and inert targets excluded")
 
         field = next(a for a in actions if a["label"] == "City" and a["kind"] == "fill")
         browser.act(field, page, text="Lisbon")
@@ -191,7 +203,8 @@ def main():
         assert browser.evaluate(
             "document.querySelector('#open-host').shadowRoot.querySelector('#shadow-category').value"
         ) == "Design"
-        passed.append("native dropdown selected inside an open shadow root")
+        assert browser.evaluate("window.shadowSelectEvents") == ["input", "change"]
+        passed.append("shadow dropdown selection emits composed input and change events")
 
         page = browser.observe(screenshot=False)
         nested = next(a for a in page["actions"] if a["label"] == "Nested action")
@@ -239,10 +252,39 @@ def main():
 
         page = browser.observe(screenshot=False)
         save = next(a for a in page["actions"] if a["label"] == "Delete data")
+        browser.evaluate("document.querySelector('#open-host').setAttribute('inert','')")
+        assert not browser.fresh(page, save)
+        try:
+            browser.act(save, page)
+        except StalePage:
+            pass
+        else:
+            raise AssertionError("Inert shadow target was executed")
+        browser.evaluate("document.querySelector('#open-host').removeAttribute('inert')")
+        passed.append("inert shadow host invalidates and blocks its observed target")
+
+        page = browser.observe(screenshot=False)
+        save = next(a for a in page["actions"] if a["label"] == "Delete data")
         browser.evaluate("document.querySelector('#open-host').setAttribute('aria-hidden','true')")
         assert not browser.fresh(page, save)
         assert not any(a.get("node") == save["node"] for a in browser.observe(screenshot=False)["actions"])
         passed.append("composed hidden host removes shadow actions")
+
+        browser.evaluate("""(() => {
+          document.body.innerHTML='<div id="early-host"></div>';
+          const root=document.querySelector('#early-host').attachShadow({mode:'open'});
+          root.innerHTML='<button>Early shadow action</button>';
+          for (let i=0;i<260;i++) {
+            const button=document.createElement('button');button.textContent='Light action '+i;
+            button.style.cssText='position:fixed;top:0;left:0;width:10px;height:10px';
+            document.body.append(button);
+          }
+        })()""")
+        page = browser.observe(screenshot=False)
+        assert page["omitted_actions"] > 0
+        assert page["actions"][0]["label"] == "Early shadow action"
+        assert not any(a["label"] == "Light action 259" for a in page["actions"])
+        passed.append("candidate cap preserves composed order around an early shadow host")
 
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
