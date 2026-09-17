@@ -18,6 +18,12 @@ const escape = (value) =>
       ],
   );
 const percent = (value) => `${(value * 100).toFixed(value < 0.01 ? 1 : 0)}%`;
+const pageEffect = (changed) =>
+  changed === true
+    ? "Page changed"
+    : changed === false
+      ? "No change observed"
+      : "Outcome not observed";
 async function call(name, body = {}) {
   const response = await fetch(`/api/${name}`, {
     method: "POST",
@@ -128,7 +134,7 @@ function render() {
     ? state.history
         .map(
           (h) =>
-            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
+            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${pageEffect(h.page_changed)}</span></div>`,
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
