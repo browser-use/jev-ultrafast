@@ -1,0 +1,45 @@
+AGENTS.md
+  s_0ea552c519f69f::t_1d5b98d4c6e621 6
+jev_ultrafast/snapshot.js
+  s_0ea552c519f69f::t_d8108c71b4b054 42,54-55,64,121
+  s_0ea552c519f69f::t_103d3de2aa13e9 87-90,161
+  s_0ea552c519f69f::t_65e5a72a40b0f7 9,12,14,16,18-19,23-41,43-53,56-63,67,78,82,92,94,101-102,104-105,107-111,113,115-117,119-120,122-124,129-132,137-138,141-151,156-157,163-172,174-175
+scripts/check_guards.py
+  s_0ea552c519f69f::t_5cdb1cb0905555 32-33
+jev_ultrafast/browser.py
+  s_0ea552c519f69f::t_0742a7129df365 153
+  s_0ea552c519f69f::t_6a70c9b68804ed 9,124,137-138,161-194,209-211,223-231,245,250
+  s_0ea552c519f69f::t_f4055aab370091 232-243,247,252
+  s_0ea552c519f69f::t_9866a9ee962f25 36-38
+  s_0ea552c519f69f::t_412c8ae4a96347 23-26,212-215,251
+  s_0ea552c519f69f::t_7752706e17e673 94,97-100
+jev_ultrafast/agent.py
+  s_0ea552c519f69f::t_3f89e5d0ecc7a5 7,111-112,146-155,200-202
+  s_0ea552c519f69f::t_d5cff5336f7d9b 41-43,83,104-110,113-116,126,133-142,180-185,198-199
+README.md
+  s_0ea552c519f69f::t_f8646265f3a7e8 7,27,30-33,36-49,96,102,126
+jev_ultrafast/model.py
+  s_0ea552c519f69f::t_ea390c439259cc 6,11,52-53,63-65,86,88,90-110,114-118,120,123,127-139,141-145,150-161,165-168,201
+jev_ultrafast/questions.py
+  s_0ea552c519f69f::t_76effeeddf867f 1,3-19,21-30
+scripts/check_state_actions.py
+  s_0ea552c519f69f::t_75f9affcc02e62 1-71
+tests/test_agent.py
+  s_0ea552c519f69f::t_2083d5c9c55814 77,82-85,92,95,97,105,109,113-117,121,395-470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecbf5ded83b3a0e022ef986c35ada849ffd9149c",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
