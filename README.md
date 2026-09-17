@@ -61,6 +61,8 @@ Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. T
 
 Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
 
+Jev is also available on [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) as `typesafe-ai/jev`, so one gateway key can serve both models: set `TYPESAFE_BASE_URL=https://ai-gateway.vercel.sh`, `TYPESAFE_MODEL=typesafe-ai/jev`, and `TEXT_MODEL_BASE_URL=https://ai-gateway.vercel.sh/v1`, with the gateway key in both `*_API_KEY` values. The gateway rounds probabilities to two decimals; the client renormalises them before validation.
+
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
 ## Use the library
