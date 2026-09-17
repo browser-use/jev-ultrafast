@@ -1,0 +1,43 @@
+jev_ultrafast/questions.py
+  s_0ea552c519f69f::t_7b58822db65748 24-25
+jev_ultrafast/snapshot.js
+  s_0ea552c519f69f::t_fd92e1986712b8 23,141-143,177
+  s_0ea552c519f69f::t_7254bd8d3b842b 137-138
+scripts/check_state_actions.py
+  s_0ea552c519f69f::t_3cb9f8399ef406 9,28-31
+jev_ultrafast/model.py
+  s_0ea552c519f69f::t_f27237c840d18d 87,125,151-198
+  s_0ea552c519f69f::t_4384fbff57b138 53
+  s_575cf78cfcde86::t_853d5f27e7d185 199-200
+jev_ultrafast/browser.py
+  s_0ea552c519f69f::t_4a9c55e5e5c5cc 109,161-166
+  s_0ea552c519f69f::t_eace67854bc1e0 9
+README.md
+  s_0ea552c519f69f::t_c4b9091c3cc353 42-44
+tests/test_agent.py
+  s_0ea552c519f69f::t_ba3bec3b2ca049 471-513
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0e4d9d7e99488505f33ffe70d4c743c9765d34f",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    },
+    "s_575cf78cfcde86": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47a38cd-a442-4fca-857a-ddfa0c1f93cc",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
