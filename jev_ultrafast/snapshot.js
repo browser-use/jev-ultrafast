@@ -50,7 +50,9 @@
     return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
-      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
+      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||'',
+      e.tagName==='SELECT' ? [e.multiple,[...e.options].map(o=>
+        [identity(o),o.value,o.label,o.selected,o.disabled,!!o.closest('optgroup[disabled]')])] : null];
   };
   const actions=[];
   for (const e of document.querySelectorAll(selector)) {
@@ -67,7 +69,7 @@
     if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
     if (e.tagName==='SELECT') {
       for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
-        actions.push({...base,kind:'select',value:o.value,
+        actions.push({...base,kind:'select',value:o.value,option_node:identity(o),
           current_value:[...e.selectedOptions].map(o=>o.label).join(', '),label:base.label+' → '+o.label});
     } else {
       const editable=!e.readOnly && e.getAttribute('aria-readonly')!=='true' &&
