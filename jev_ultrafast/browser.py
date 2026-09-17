@@ -154,9 +154,10 @@ def browser_operation(request):
               if (action.kind==='select') {
                 const o=window.__jevFast.nodes.get(action.option_node);
                 if (e.tagName!=='SELECT' || o?.tagName!=='OPTION' || !o.isConnected || o.closest('select')!==e ||
-                    o.value!==action.value || o.disabled || o.closest('optgroup[disabled]')) return null;
+                    o.value!==action.value || o.selected || o.disabled || o.closest('optgroup[disabled]')) return null;
                 // Values need not be unique. Select the exact option that was observed.
-                e.selectedIndex=o.index;
+                if (e.multiple) o.selected=true;
+                else e.selectedIndex=o.index;
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
