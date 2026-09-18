@@ -1,0 +1,19 @@
+README.md
+  s_9b22433dd9dc49::t_a911994a91ca86 5-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cff233477ef6d62e9922bbbd9a456e5e410f117",
+  "prompts": {},
+  "sessions": {
+    "s_9b22433dd9dc49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0b204-03fc-7861-9048-8bf27bb01460",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
