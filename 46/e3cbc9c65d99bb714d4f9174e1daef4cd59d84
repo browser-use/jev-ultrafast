@@ -1,0 +1,21 @@
+jev_ultrafast/planner.py
+  s_0ea552c519f69f::t_3d26d07975fc2a 122-123
+tests/test_planner.py
+  s_0ea552c519f69f::t_5a30e5cc17a47b 154-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46e3cbc9c65d99bb714d4f9174e1daef4cd59d84",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
