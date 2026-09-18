@@ -158,6 +158,11 @@ def field_context(goal, action, page, history):
 
 
 def field_text(context):
+    """Generate validated text, with at most one fresh request after a malformed reply.
+
+    Metadata counts generation attempts, not post_json's existing HTTP backoff retries.
+    Latency covers all attempts; usage stays the final reply's usage for compatibility.
+    """
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
@@ -167,32 +172,38 @@ def field_text(context):
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
     started = time.perf_counter()
-    result = post_json(
-        base + "/chat/completions",
-        key,
-        {
-            "model": model,
-            "max_tokens": 1024,
-            "response_format": {"type": "json_object"},
-            **reasoning,
-            "messages": [
-                {"role": "system", "content": TEXT_VALUE},
-                {
-                    "role": "user",
-                    "content": json.dumps(context),
-                },
-            ],
-        },
-    )
-    try:
-        output = json.loads(result["choices"][0]["message"]["content"])
-        value = output["text"]
-        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
-    return value, {
+    body = {
         "model": model,
-        "latency_ms": round((time.perf_counter() - started) * 1000),
-        "usage": result.get("usage", {}),
+        "max_tokens": 1024,
+        "response_format": {"type": "json_object"},
+        **reasoning,
+        "messages": [
+            {"role": "system", "content": TEXT_VALUE},
+            {"role": "user", "content": json.dumps(context)},
+        ],
     }
+    usage_by_attempt = []
+    for attempt in range(1, 3):
+        # Only malformed replies regenerate. Transport/auth failures and call bugs propagate.
+        try:
+            result = post_json(base + "/chat/completions", key, body)
+        except json.JSONDecodeError:
+            result = {}
+        usage_by_attempt.append(result.get("usage", {}) if isinstance(result, dict) else {})
+        try:
+            output = json.loads(result["choices"][0]["message"]["content"])
+            value = output["text"]
+            if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
+                raise ValueError()
+        except (ValueError, KeyError, TypeError, IndexError):
+            if attempt == 2:
+                raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+            # Same input, fresh generation; never repair a value or mutate the browser here.
+            continue
+        return value, {
+            "model": model,
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "usage": usage_by_attempt[-1],
+            "attempts": attempt,
+            "usage_by_attempt": usage_by_attempt,
+        }
