@@ -91,9 +91,16 @@ function render() {
     controls();
     return;
   }
-  $("empty").hidden = true;
-  $("screenshot").hidden = false;
-  $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
+  const hasScreenshot = Boolean(page.screenshot);
+  $("empty").hidden = hasScreenshot;
+  $("screenshot").hidden = !hasScreenshot;
+  if (hasScreenshot) {
+    $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
+  } else {
+    $("empty").querySelector("h2").textContent = "Live preview unavailable.";
+    $("empty").querySelector("p:last-child").textContent =
+      "Screenshot capture timed out. The indexed-element loop is still running.";
+  }
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
   $("action-count").textContent = `${state.elements.length} elements`;
@@ -123,7 +130,7 @@ function render() {
     const index=String(i+1);
     return `<div class="target ${index === selectedIndex ? 'selected' : ''}" data-action="${index}" style="left:${100*a.rect.x/page.w}%;top:${100*a.rect.y/page.h}%;width:${100*a.rect.w/page.w}%;height:${100*a.rect.h/page.h}%"><span>${index}</span></div>`;
   }).join('');
-  $("targets").hidden = !$("overlays").checked;
+  $("targets").hidden = !hasScreenshot || !$("overlays").checked;
   $("history").innerHTML = state.history.length
     ? state.history
         .map(
@@ -191,7 +198,7 @@ $("stop").addEventListener("click", () => {
   controls();
 });
 $("overlays").addEventListener("change", () => {
-  $("targets").hidden = !$("overlays").checked;
+  $("targets").hidden = !state?.page?.screenshot || !$("overlays").checked;
 });
 $("choices").addEventListener("pointerover", (event) => {
   const id = event.target.closest("[data-action]")?.dataset.action;

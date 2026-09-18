@@ -239,6 +239,24 @@ def test_observation_is_one_atomic_browser_read(monkeypatch):
     assert cdp.call_args.args[0] == "Runtime.evaluate"
 
 
+def test_screenshot_timeout_preserves_structured_observation(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    p = page()
+
+    def cdp(method, **_kwargs):
+        if method == "Runtime.evaluate":
+            return {"result": {"value": p}}
+        if method == "Page.captureScreenshot":
+            raise TimeoutError("Page.captureScreenshot timed out")
+        raise AssertionError(method)
+
+    monkeypatch.setattr(browser, "cdp", cdp)
+    actual = browser_operation({"operation": "observe", "session": "test", "screenshot": True})
+    assert actual["actions"] == p["actions"]
+    assert actual["screenshot"] is None
+
+
 def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     import jev_ultrafast.browser as browser
 
