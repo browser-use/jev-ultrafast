@@ -1,0 +1,30 @@
+jev_ultrafast/model.py
+  s_0ea552c519f69f::t_05341c7d279cf7 116,155-157,181
+scripts/check_state_actions.py
+  s_0ea552c519f69f::t_c34e2dd826f079 14-17,46-47,52-54,79-86
+jev_ultrafast/questions.py
+  s_0ea552c519f69f::t_05341c7d279cf7 28-29
+jev_ultrafast/snapshot.js
+  s_0ea552c519f69f::t_05341c7d279cf7 39-44,46-47,98-108,114,119,121,125,137-140,171,198,200
+jev_ultrafast/browser.py
+  s_0ea552c519f69f::t_c34e2dd826f079 188-190
+  s_0ea552c519f69f::t_05341c7d279cf7 109-111,215,245-252
+jev_ultrafast/agent.py
+  s_0ea552c519f69f::t_05341c7d279cf7 127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15fba969445fc0d4f070f805b5d9e08ef0056232",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
