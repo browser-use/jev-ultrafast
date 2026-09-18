@@ -166,6 +166,9 @@ def field_text(context):
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    if "llmtr.com/" in base:
+        # LLMTR reads reasoning from the model id; its DeepSeek rows only honor DeepSeek's own switch.
+        reasoning = {"thinking": {"type": "disabled"}} if model.startswith("deepseek/") else {}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
