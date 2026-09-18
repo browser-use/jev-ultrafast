@@ -257,6 +257,27 @@ def test_screenshot_timeout_preserves_structured_observation(monkeypatch):
     assert actual["screenshot"] is None
 
 
+def test_recording_skips_frames_when_screenshot_times_out(monkeypatch, tmp_path):
+    initial = page()
+    initial["screenshot"] = None
+    after_action = deepcopy(initial)
+    browser = Mock(fresh=Mock(return_value=True), observe=Mock(side_effect=[initial, after_action]))
+    monkeypatch.setattr(loop, "Browser", Mock(return_value=browser))
+
+    agent = loop.Agent("https://example.test/", "Click Go", record_dir=tmp_path)
+    agent.state["decision"] = decision("e3")
+    agent.state["decision"]["operation"] = "CLICK"
+    agent.state["status"] = "predicted"
+    agent.state["started_at"] = time.perf_counter()
+    agent.command("act", {"fingerprint": initial["fingerprint"]})
+    agent.close()
+
+    assert list(tmp_path.glob("*.jpg")) == []
+    assert agent.state["history"][-1]["action"] == "Go"
+    assert browser.observe.call_count == 2
+    assert browser.close.call_count == 1
+
+
 def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     import jev_ultrafast.browser as browser
 
