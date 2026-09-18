@@ -123,9 +123,12 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
     def post(_url, _key, body):
         questions = body["questions"]
         target = questions["click_target"]
-        assert target["criteria"]["1"]["checked"] == "true"
-        assert target["criteria"]["1"]["selected"] is False
-        assert questions["operation"]["instructions"]["rules"] in target["instructions"]["rules"]
+        first = json.loads(target["criteria"]["1"])
+        assert first["checked"] == "true"
+        assert first["selected"] is False
+        operation_instructions = json.loads(questions["operation"]["instructions"])
+        target_instructions = json.loads(target["instructions"])
+        assert operation_instructions["rules"] in target_instructions["rules"]
         return {
             "model": "test",
             "answers": {

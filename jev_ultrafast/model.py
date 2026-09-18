@@ -22,9 +22,20 @@ def post_json(url, key, body):
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
-            raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
+            detail = ""
+            try:
+                detail = ": " + response.json()["error"]["message"][:300]
+            except (KeyError, TypeError, ValueError):
+                pass
+            raise RuntimeError(f"Model provider returned HTTP {response.status_code}{detail}; no action executed.")
         return response.json()
     raise RuntimeError("Model unavailable")
+
+
+def as_text(value):
+    """Criteria and instructions go on the wire as text; structured values are JSON-encoded
+    so both api.typesafe.ai and OpenRouter's decisions endpoint accept the request."""
+    return value if isinstance(value, str) else json.dumps(value, separators=(", ", ": "), ensure_ascii=False)
 
 
 def validate_choice(answer, ids):
@@ -89,20 +100,26 @@ def choose(state, goal, history):
     operations.update({key: value["label"] for key, value in controls.items()})
     operations.update(DONE="Every requirement is visibly satisfied.", BLOCKED="No supported operation can progress.")
     questions = {
-        "operation": {"type": "choice", "criteria": operations, "instructions": {"goal": goal, "rules": NEXT_ACTION}}
+        "operation": {
+            "type": "choice",
+            "criteria": {key: as_text(value) for key, value in operations.items()},
+            "instructions": as_text({"goal": goal, "rules": NEXT_ACTION}),
+        }
     }
     for operation, candidates in targets.items():
         questions[operation.lower() + "_target"] = {
             "type": "choice",
             "criteria": {
-                index: {
-                    "element": f"[{index}] {a['label']}",
-                    "current_value": a.get("current_value", a.get("value", "")),
-                    **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
-                }
+                index: as_text(
+                    {
+                        "element": f"[{index}] {a['label']}",
+                        "current_value": a.get("current_value", a.get("value", "")),
+                        **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
+                    }
+                )
                 for index, a in candidates.items()
             },
-            "instructions": {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
+            "instructions": as_text({"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]}),
         }
     body = {
         "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
@@ -116,7 +133,8 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    url = os.environ.get("TYPESAFE_API_URL", "https://api.typesafe.ai/v1/systemone")
+    result = post_json(url, os.environ["TYPESAFE_API_KEY"], body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
