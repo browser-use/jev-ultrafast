@@ -10,10 +10,16 @@ from .questions import MAX_STEPS
 
 
 class Agent:
-    def __init__(self, url, goals, *, record_dir=None, screenshots=False):
+    def __init__(self, url, goals, *, record_dir=None, screenshots=False, max_actions=None, budget_ms=None):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
+        # A caller may tighten the standing bounds for one run. It may not raise them.
+        # Both must be whole numbers: 0.5 would truncate to 0 and silently remove the bound.
+        if max_actions is not None and (type(max_actions) is not int or not 0 < max_actions <= MAX_STEPS):
+            raise ValueError(f"max_actions must be a whole number between 1 and {MAX_STEPS}")
+        if budget_ms is not None and (type(budget_ms) is not int or budget_ms <= 0):
+            raise ValueError("budget_ms must be a positive whole number")
         plan = [task]
         self.pending_text = None
         self.browser = Browser(url)
@@ -38,6 +44,9 @@ class Agent:
             elapsed_ms=0,
             started_at=None,
             record=bool(self.record_dir),
+            max_actions=MAX_STEPS if max_actions is None else int(max_actions),
+            budget_ms=None if budget_ms is None else int(budget_ms),
+            stopped_reason=None,
         )
         if self.record_dir:
             self.record_dir.mkdir(parents=True, exist_ok=True)
@@ -49,12 +58,57 @@ class Agent:
             "elements": action_space(self.state["page"]["actions"])[0],
         }
 
+    def stop_for_time(self):
+        """Record a time-budget stop without executing anything further."""
+        state = self.state
+        state["decision"] = None
+        state["status"] = "blocked"
+        state["stopped_reason"] = "time_budget"
+        state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+        return self.snapshot()
+
+    def exhausted(self):
+        """True once this run's wall-clock budget is spent."""
+        budget, started = self.state.get("budget_ms"), self.state["started_at"]
+        return bool(budget) and started is not None and (time.perf_counter() - started) * 1000 >= budget
+
+    def summary(self):
+        """A compact account of what this run did.
+
+        `status` reports the run's own stopping condition, never whether the goal was
+        achieved. DONE is a model choice; `verified` stays None because only an
+        independent check of the final page can decide that.
+        """
+        state, page = self.state, self.state["page"]
+        return {
+            "status": state["status"],
+            "stopped_reason": state.get("stopped_reason"),
+            "verified": None,
+            "elapsed_ms": state["elapsed_ms"],
+            "actions": len(state["history"]),
+            "decisions": len(state["decisions"]),
+            "text_calls": len(state["text_calls"]),
+            "max_actions": state.get("max_actions", MAX_STEPS),
+            "url": page["url"] if page else None,
+            "title": page["title"] if page else None,
+            "steps": [
+                {k: h[k] for k in ("step", "action", "kind", "text", "page_changed", "elapsed_ms")}
+                for h in state["history"]
+            ],
+        }
+
     def command(self, name, body=None):
         body = body or {}
         state = self.state
         if name == "tick":
             try:
                 self.command("predict", {})
+                if state["status"] in {"done", "blocked"}:
+                    return self.snapshot()
+                # The model call itself can outlast the deadline. Discard that decision
+                # rather than let an expired run still mutate the page.
+                if self.exhausted():
+                    return self.stop_for_time()
                 return self.command("act", {"fingerprint": state["page"]["fingerprint"]})
             except StalePage:
                 state["decision"] = None
@@ -67,12 +121,18 @@ class Agent:
                 raise ValueError("Start a demo first")
             if state["started_at"] is None:
                 state["started_at"] = time.perf_counter()
-            if not state["browser"].fresh(state["page"]):
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
             state["decision"] = None
+            # A run that already stopped keeps the reason it stopped for.
             if state["status"] in {"done", "blocked"}:
                 raise ValueError("This run has stopped. Start a fresh demo.")
-            if len(state["decisions"]) >= MAX_STEPS * 2:
+            # Stop before spending a model call or a browser read, never after.
+            if self.exhausted():
+                return self.stop_for_time()
+            if not state["browser"].fresh(state["page"]):
+                state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            if len(state["decisions"]) >= state.get("max_actions", MAX_STEPS) * 2:
+                state["status"] = "blocked"
+                state["stopped_reason"] = "decision_budget"
                 raise ValueError("Reached the demo's model-call budget")
             state["decision"] = choose(state["page"], state["goal"], state["history"])
             state["decisions"].append(
@@ -95,13 +155,16 @@ class Agent:
                     state["status"] = "ready"
                     raise StalePage("Page changed since the decision. Choose again.")
                 state["status"] = "done" if selected == "DONE" else "blocked"
+                state["stopped_reason"] = "model_done" if selected == "DONE" else "model_blocked"
                 state["plan_index"] = int(selected == "DONE")
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
             action = next(a for a in page["actions"] if a["id"] == selected)
-            if len(state["history"]) >= MAX_STEPS:
+            budget = state.get("max_actions", MAX_STEPS)
+            if len(state["history"]) >= budget:
                 state["status"] = "blocked"
-                raise ValueError(f"Stopped at the {MAX_STEPS}-action demo budget")
+                state["stopped_reason"] = "action_budget"
+                raise ValueError(f"Stopped at the {budget}-action demo budget")
             text, helper = None, None
             if action["kind"] == "fill":
                 if not state["browser"].fresh(page):
@@ -151,11 +214,10 @@ class Agent:
                     base64.b64decode(state["page"]["screenshot"])
                 )
             repeated = state["history"][-3:]
-            state["status"] = (
-                "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
-                else "ready"
-            )
+            stalled = len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
+            state["status"] = "blocked" if stalled else "ready"
+            if stalled:
+                state["stopped_reason"] = "no_progress"
         else:
             raise ValueError("Unknown command")
         return self.snapshot()

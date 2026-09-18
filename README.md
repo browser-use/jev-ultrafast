@@ -91,6 +91,49 @@ uv run --env-file .env python examples/run.py \
 
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
+## Use it from an MCP client
+
+The same agent is an MCP server. A client supplies a goal; Jev still chooses every element.
+
+```bash
+uv sync --extra mcp
+uv run jev-mcp
+```
+
+Point a client at it:
+
+```json
+{
+  "mcpServers": {
+    "jev-ultrafast": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/jev-ultrafast", "jev-mcp"],
+      "env": { "TYPESAFE_API_KEY": "...", "TEXT_MODEL_API_KEY": "..." }
+    }
+  }
+}
+```
+
+| Tool | Job |
+| --- | --- |
+| `jev_run` | Pursue one goal until the run stops; returns every step and the final page |
+| `jev_start` / `jev_step` | The same loop, one decision at a time |
+| `jev_observe` | Re-read the current element table and visible text; no decision, no model call |
+| `jev_close` | Close the tab and return that run's summary |
+
+**No tool accepts an element index, a selector, a coordinate, or a script.** `jev_step` takes no
+arguments at all: the client names an outcome and the policy picks the control, so the guarantee
+the library makes survives the MCP boundary. [Browser Harness](https://github.com/browser-use/browser-harness)
+ships a separate low-level MCP server for clients that do want to drive the browser directly.
+
+Every run is bounded. `max_actions` tightens the 60-action limit and `timeout_ms` caps wall-clock
+time, defaulting to 120,000; `stopped_reason` names the bound that ended the run. The deadline is
+checked before each decision and again before the action it chose, so an expired run does not
+mutate the page. It starts at the first decision, which leaves tab creation and the first
+observation outside it, matching the measurement boundary in [performance.md](docs/performance.md);
+browser startup is separately bounded at roughly 15 seconds. `verified` is always `null`, because
+only an independent check of the returned page decides whether a goal was actually met.
+
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
@@ -114,6 +157,7 @@ Every executed target is resolved from an observed node. The executor rechecks p
 | [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
 | [questions.py](jev_ultrafast/questions.py) | Model instructions |
 | [demo.py](jev_ultrafast/demo.py) | Local inspector |
+| [mcp_server.py](jev_ultrafast/mcp_server.py) | Goal-level MCP tools |
 
 ## Evidence and limits
 
@@ -123,11 +167,12 @@ In six alternating runs with identical models and settings, both versions passed
 
 The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+A run is bounded by actions, model calls, and an optional wall-clock budget; `stopped_reason` reports which one ended it. A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
 ## Development
 
 ```bash
+uv sync --extra mcp
 uv run ruff check .
 uv run pytest
 node --check jev_ultrafast/static/app.js

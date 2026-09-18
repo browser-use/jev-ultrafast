@@ -8,9 +8,11 @@ Read README.md before editing. Keep the loop small: page -> indexed elements -> 
 - TYPE_TEXT invokes the text LLM. Cache a stale retry's value only while its entire helper input is identical.
 - Never retry a browser mutation. Log execution before observing its result.
 - Screenshots are optional; the model does not consume them. Keep demonstration footage at its original speed.
+- The MCP server is goal-level. Never give a tool an element index, selector, coordinate,
+  or script parameter; a client names the outcome and the policy picks the control.
 - Keep credentials server-side and .env ignored. Tests must not call paid APIs.
 - Verify actual final outcomes independently. A DONE choice is not proof of success.
 - Keep examples, README claims, raw evidence, and model-call counts consistent.
 - Do not commit or push unless the user requests it.
 
-Checks: uv run ruff check ., uv run pytest, node --check jev_ultrafast/static/app.js, uv build.
+Checks: uv sync --extra mcp, uv run ruff check ., uv run pytest, node --check jev_ultrafast/static/app.js, uv build.
