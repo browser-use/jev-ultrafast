@@ -178,8 +178,11 @@ def field_text(context):
             "messages": [
                 {"role": "system", "content": TEXT_VALUE},
                 {
+                    # Keep non-ASCII context readable. With the default ensure_ascii=True a
+                    # Japanese page arrives as \uXXXX escapes and small text models answer
+                    # {"text": null} even when the goal states the value verbatim.
                     "role": "user",
-                    "content": json.dumps(context),
+                    "content": json.dumps(context, ensure_ascii=False),
                 },
             ],
         },
