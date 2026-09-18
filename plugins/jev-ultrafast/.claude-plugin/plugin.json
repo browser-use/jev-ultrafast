@@ -1,0 +1,22 @@
+{
+  "name": "jev-ultrafast",
+  "description": "Drive Chrome from one natural-language goal with Jev Ultrafast: TypeSafe's Jev picks an operation and an element per step, and a small text model writes text only for TYPE_TEXT. Ships setup guidance, run commands, and a dedicated-Chrome launcher. API keys stay in the project's own gitignored .env, never in this plugin.",
+  "description_i18n": {
+    "en": "Drive Chrome from one natural-language goal with Jev Ultrafast: TypeSafe's Jev picks an operation and an element per step, and a small text model writes text only for TYPE_TEXT. Ships setup guidance, run commands, and a dedicated-Chrome launcher. API keys stay in the project's own gitignored .env, never in this plugin.",
+    "zh-CN": "用 Jev Ultrafast 让一句话目标驱动真实 Chrome：每一步由 TypeSafe 的 Jev 同时选出操作与元素，只有 TYPE_TEXT 才调用小文本模型。插件含配置说明、运行命令与专属 Chrome 启动脚本；API key 只放在项目自己的 .env（已 gitignore），不进插件。"
+  },
+  "version": "0.1.0",
+  "author": {
+    "name": "white-drizzle",
+    "url": "https://github.com/white-drizzle"
+  },
+  "keywords": [
+    "browser-agent",
+    "automation",
+    "chrome",
+    "cdp",
+    "jev",
+    "typesafe",
+    "openrouter"
+  ]
+}
