@@ -151,6 +151,20 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
+def test_non_ascii_context_is_sent_as_text_the_model_can_read(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"2029-12-25"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+    # A lone surrogate can reach page text through the CDP round trip and cannot be UTF-8 encoded.
+    context = {"goal": "set 契約終了日 to 2029-12-25", "field": {"label": "契約終了日 \ud800"}}
+    assert model.field_text(context)[0] == "2029-12-25"
+    sent = post.call_args.args[2]["messages"][1]["content"]
+    sent.encode("utf-8")
+    assert "契約終了日" in sent
+    assert "\\ud800" in sent
+    assert json.loads(sent)["field"]["label"] == "契約終了日 \ud800"
+
+
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
