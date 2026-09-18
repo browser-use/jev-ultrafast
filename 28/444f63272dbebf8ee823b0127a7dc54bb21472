@@ -1,0 +1,21 @@
+jev_ultrafast/snapshot.js
+  s_0ea552c519f69f::t_4a422250373ee6 43-51,107-108,114,171,177-178,183-188,191-193
+scripts/check_state_actions.py
+  s_0ea552c519f69f::t_0571aff4762484 19-22,52-55,61,96-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28444f63272dbebf8ee823b0127a7dc54bb21472",
+  "prompts": {},
+  "sessions": {
+    "s_0ea552c519f69f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac09-948b-7802-983a-311e52c6ad99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
