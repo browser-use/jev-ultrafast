@@ -1,0 +1,20 @@
+{
+  "name": "jev-ultrafast",
+  "description": "Plugin marketplace for the jev-ultrafast browser agent (Browser Use x TypeSafe's Jev).",
+  "owner": {
+    "name": "Browser Use",
+    "url": "https://github.com/browser-use/jev-ultrafast"
+  },
+  "plugins": [
+    {
+      "name": "jev-ultrafast",
+      "description": "Drive Chrome from one natural-language goal via Jev's operation+target decisions: setup skill, a /jev command, and a dedicated-Chrome launcher. Keys stay in the project's gitignored .env.",
+      "author": {
+        "name": "white-drizzle",
+        "url": "https://github.com/white-drizzle"
+      },
+      "category": "automation",
+      "source": "./plugins/jev-ultrafast"
+    }
+  ]
+}
