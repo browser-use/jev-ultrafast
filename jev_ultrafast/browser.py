@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -21,6 +22,9 @@ class Browser:
     def __init__(self, url):
         ensure_daemon()
         self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
+        if os.environ.get("JEV_FOREGROUND_TAB") == "1":
+            # Headless Chrome stalls screenshots and menus in background tabs.
+            cdp("Target.activateTarget", targetId=self.target)
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
         self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
         # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
