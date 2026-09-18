@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
+
+SCREENSHOT_TIMEOUT = float(os.environ.get("SCREENSHOT_TIMEOUT", "20"))
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
@@ -33,6 +36,8 @@ class Browser:
             time.sleep(0.02)
 
     def call(self, method, **params):
+        if method == "Page.captureScreenshot" and "_response_timeout" not in params:
+            params["_response_timeout"] = SCREENSHOT_TIMEOUT
         return cdp(method, session_id=self.session, **params)
 
     def evaluate(self, expression):
@@ -122,6 +127,8 @@ def browser_operation(request):
     session = request["session"]
 
     def call(method, **params):
+        if method == "Page.captureScreenshot" and "_response_timeout" not in params:
+            params["_response_timeout"] = SCREENSHOT_TIMEOUT
         return cdp(method, session_id=session, **params)
 
     def evaluate(expression):
@@ -190,5 +197,8 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
-        info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        try:
+            info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        except Exception:
+            info["screenshot"] = ""
     return info
