@@ -65,6 +65,18 @@ Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. T
 
 Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
 
+Browser Harness attaches to the first CDP endpoint it finds on ports **9222/9223**. If your everyday browser is running there, that browser is the one driven — including your own logged-in tabs. To keep the demo on a dedicated browser, launch one and pin the harness to it:
+
+```bash
+"/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" \
+  --remote-debugging-port=9223 --user-data-dir=/tmp/jev-profile about:blank &
+export BU_CDP_WS="$(curl -s http://127.0.0.1:9223/json/version \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["webSocketDebuggerUrl"])')"
+uv run jev
+```
+
+Screen capture is on in the inspector. A background tab can throttle rendering, which makes `Page.captureScreenshot` time out and pauses the run; screenshot timeouts are only fatal while `screenshots=True`, so bring the driven tab to the front (or run the library with the default `screenshots=False`).
+
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
 ## Use the library
