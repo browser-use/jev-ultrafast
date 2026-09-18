@@ -262,7 +262,7 @@ def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, r
     monkeypatch.setattr(browser, "cdp", cdp)
     with pytest.raises(RuntimeError, match="Dropdown execution"):
         browser_operation({"operation": "act", "session": "test", "action": {
-            "id": "e1", "kind": "select", "node": 1, "value": "Design",
+            "id": "e1", "kind": "select", "node": 1, "option_node": 2, "value": "Design",
         }})
     assert cdp.call_count == 1
 

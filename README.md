@@ -104,6 +104,8 @@ uv run --env-file .env python examples/run.py \
 
 Every executed target is resolved from an observed node. The executor rechecks page freshness and click occlusion. Model output never becomes selectors, coordinates, shell commands, or executable JavaScript. Text-helper output must parse as a small JSON object before typing.
 
+Native dropdowns retain the identity of each observed option, so duplicate values cannot redirect a selection. Changes to option identities, order, values, labels, selection, disabled state, or the dropdown's multiple-selection mode invalidate its selection guard.
+
 ## Small enough to read
 
 | File | Job |
@@ -136,6 +138,8 @@ uv build
 ```
 
 Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+
+`uv run python scripts/check_selects.py` checks native dropdown identity and freshness in a local browser, including duplicate values and stale options, without model calls.
 
 ---
 

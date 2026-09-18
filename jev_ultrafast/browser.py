@@ -140,6 +140,8 @@ def browser_operation(request):
         elif kind != "wait":
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
+            if kind == "select" and type(action.get("option_node")) is not int:
+                raise ValueError("Invalid observed option node")
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
             target = evaluate("""(action => {
               const e=window.__jevFast?.nodes.get(action.node);
@@ -150,9 +152,12 @@ def browser_operation(request):
               if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
               if (!e.contains(document.elementFromPoint(x,y))) return null;
               if (action.kind==='select') {
-                if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
-                    !o.disabled && !o.closest('optgroup[disabled]'))) return null;
-                e.value=action.value;
+                const o=window.__jevFast.nodes.get(action.option_node);
+                if (e.tagName!=='SELECT' || o?.tagName!=='OPTION' || !o.isConnected || o.closest('select')!==e ||
+                    o.value!==action.value || o.selected || o.disabled || o.closest('optgroup[disabled]')) return null;
+                // Values need not be unique. Select the exact option that was observed.
+                if (e.multiple) o.selected=true;
+                else e.selectedIndex=o.index;
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
