@@ -54,6 +54,8 @@ cd jev-ultrafast
 uv sync
 cp .env.example .env
 # Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
+# To route the decision model through OpenRouter: set TYPESAFE_API_URL=https://openrouter.ai/api/alpha/decisions,
+# put an OpenRouter key in TYPESAFE_API_KEY, and set TYPESAFE_MODEL to the OpenRouter id (e.g. typesafe/jev-1.13).
 uv run jev
 ```
 
