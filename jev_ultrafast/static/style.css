@@ -144,6 +144,7 @@ select {
   font-size: 12px;
 }
 input[type="text"],
+input[type="url"],
 #goal {
   width: 100%;
   min-width: 0;
@@ -159,6 +160,22 @@ input:focus-visible,
 select:focus-visible {
   outline: 2px solid #2f8a60;
   outline-offset: 0;
+}
+.url-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #77776e;
+}
+.url-row label {
+  white-space: nowrap;
+}
+.url-row input {
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  padding: 4px 0;
 }
 button {
   white-space: nowrap;
