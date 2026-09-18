@@ -17,7 +17,17 @@ PORT = int(os.environ.get("TYPESAFE_DEMO_PORT", "8766"))
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOKEN = secrets.token_urlsafe(32)
 LOCK = threading.Lock()
-AGENT = None
+AGENTS = {}
+QUEUE = []  # scenarios not started yet, run one at a time to avoid contention on shared Chrome
+CURRENT_GOAL = ""
+CURRENT_RECORD = False
+
+REAL_WEB = {
+    "flights": "https://www.google.com/travel/flights?hl=en",
+    "booking": "https://www.booking.com/flights/index.html",
+    "expedia": "https://www.expedia.com/Flights",
+}
+SCENARIOS = {*REAL_WEB, "travel", "research"}
 
 
 def load_environment():
@@ -30,40 +40,88 @@ def load_environment():
 
 
 def response_state():
-    state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
+    return {
+        "sites": {scenario: agent.snapshot() for scenario, agent in AGENTS.items()},
+        "queued": list(QUEUE),
+        "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"),
+        "max_steps": MAX_STEPS,
+    }
 
 
-def close_browser():
-    global AGENT
-    if AGENT:
-        AGENT.close()
-        AGENT = None
+def close_all():
+    global AGENTS, QUEUE
+    for agent in AGENTS.values():
+        agent.close()
+    AGENTS = {}
+    QUEUE = []
+
+
+def start_next():
+    """Open the next queued site's own tab. Only one site opens/works at a time,
+    since a shared Chrome instance gets measurably less reliable under concurrent load."""
+    global QUEUE
+    if not QUEUE:
+        return
+    scenario = QUEUE[0]
+    # Only drop it from the queue once its tab actually opened; a transient CDP failure here
+    # (e.g. "No target with given id found") should leave it queued for the next retry, not
+    # silently disappear.
+    agent = Agent(
+        REAL_WEB[scenario] if scenario in REAL_WEB else f"{ORIGIN}/fixture.html?scenario={scenario}",
+        CURRENT_GOAL,
+        screenshots=True,
+        record_dir=Path.cwd() / "artifacts" / "frames" / scenario if CURRENT_RECORD else None,
+    )
+    QUEUE = QUEUE[1:]
+    agent.state["scenario"] = scenario
+    AGENTS[scenario] = agent
+
+
+def advance_queue_if_ready():
+    if QUEUE and AGENTS and all(a.state["status"] in {"done", "blocked"} for a in AGENTS.values()):
+        start_next()
 
 
 def command(name, body):
-    global AGENT
+    global CURRENT_GOAL, CURRENT_RECORD, QUEUE
     if name == "reset":
-        scenario = body.get("scenario", "flights")
-        if scenario not in {"travel", "research", "flights"}:
-            raise ValueError("Unknown demo scenario")
+        scenarios = list(dict.fromkeys(body.get("scenarios") or []))
+        if not scenarios or any(scenario not in SCENARIOS for scenario in scenarios):
+            raise ValueError("Pick at least one known site")
         goal = body.get("goal", "").strip()
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
-        close_browser()
-        AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
-            goal,
-            screenshots=True,
-            record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,
-        )
-        AGENT.state["scenario"] = scenario
-    else:
-        if AGENT is None:
-            raise ValueError("Start a demo first")
-        AGENT.command(name, body)
+        close_all()
+        CURRENT_GOAL = goal
+        CURRENT_RECORD = bool(body.get("record"))
+        QUEUE = scenarios
+        try:
+            start_next()
+        except RuntimeError as error:
+            # The item stays queued; surface the error so the UI can display it.
+            result = response_state()
+            result["errors"] = {"setup": str(error)}
+            return result
+        return response_state()
+    if name == "tick_all":
+        errors = {}
+        for scenario, agent in list(AGENTS.items()):
+            if agent.state["status"] in {"done", "blocked"}:
+                continue
+            try:
+                agent.command("tick", {})
+            except Exception as error:  # one site's failure must not stop the others
+                errors[scenario] = str(error)
+        advance_queue_if_ready()
+        result = response_state()
+        if errors:
+            result["errors"] = errors
+        return result
+    scenario = body.get("scenario")
+    if scenario not in AGENTS:
+        raise ValueError("Start a demo first")
+    AGENTS[scenario].command(name, body)
+    advance_queue_if_ready()
     return response_state()
 
 
@@ -130,7 +188,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     load_environment()
-    atexit.register(close_browser)
+    atexit.register(close_all)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Jev Ultrafast: {ORIGIN}", flush=True)
     try:
