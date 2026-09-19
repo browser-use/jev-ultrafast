@@ -123,7 +123,9 @@ In six alternating runs with identical models and settings, both versions passed
 
 The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, including nested open shadow roots and accessible same-origin frames, not the full accessible-name specification. Closed roots, cross-origin/opaque frames, padded or transformed/zoomed frame chains, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain unsupported. Owned tabs share the existing Chrome profile.
+
+Malformed text-helper replies get one bounded generation retry before any browser input; a second invalid reply fails closed. Browser mutations are never automatically retried. See the [nested-DOM/recovery evaluation](docs/reliability-evaluation.md) for paired outcomes, timing boundaries, and limitations; its targeted challenge results are not a broad-web reliability claim.
 
 ## Development
 
@@ -135,7 +137,7 @@ node --check jev_ultrafast/snapshot.js
 uv build
 ```
 
-Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls; `uv run python scripts/check_dom_roots.py` adds nested-root, iframe, geometry, and event-propagation checks. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
 
 ---
 

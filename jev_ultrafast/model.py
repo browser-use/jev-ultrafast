@@ -148,6 +148,75 @@ def choose(state, goal, history):
     }
 
 
+def choose_joint(state, goal, history):
+    """H5: one observed action head; oversized spaces use the unchanged chooser."""
+    elements, targets, controls = action_space(state["actions"])
+    offered, criteria = {}, {}
+    for operation, candidates in targets.items():
+        for target, action in candidates.items():
+            key = f"{operation}:{target}"
+            offered[key] = (operation, target, action["id"])
+            criteria[key] = {
+                "operation": operation,
+                "element": f"[{target}] {action['label']}",
+                "current_value": action.get("current_value", action.get("value", "")),
+                **{k: action[k] for k in ("role", "checked", "selected", "expanded") if k in action},
+            }
+            if operation == "SELECT":
+                criteria[key]["option_value"] = action["value"]
+    for operation, action in controls.items():
+        offered[operation] = (operation, None, action["id"])
+        criteria[operation] = action["label"]
+    for operation, label in {
+        "DONE": "Every requirement is visibly satisfied.",
+        "BLOCKED": "No supported operation can progress.",
+    }.items():
+        offered[operation] = (operation, None, operation)
+        criteria[operation] = label
+    count = len(offered)
+    if count > 64:
+        return {**choose(state, goal, history), "chooser": "multifactor_fallback", "joint_choice_count": count}
+    body = {
+        "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
+        "state": {
+            "page": {k: state[k] for k in ("url", "title", "text")},
+            "elements": elements,
+            "recent_actions": [
+                {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
+            ],
+        },
+        "questions": {"action": {
+            "type": "choice", "criteria": criteria,
+            "instructions": {"goal": goal, "rules": [
+                NEXT_ACTION,
+                "Choose one complete offered operation/target pair or terminal. "
+                "Use the entire goal, current values, nearby text, and history. "
+                "Do not choose a field that already contains the requested value. "
+                "SELECT uses only its observed option. Choose only an offered choice.",
+            ]},
+        }},
+    }
+    started = time.perf_counter()
+    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    answer = validate_choice(result["answers"].get("action", {}), offered)
+    operation, target, selected = offered[answer["choice"]]
+    marginals, probabilities = {}, {}
+    for key, probability in answer["probabilities"].items():
+        op, _, action_id = offered[key]
+        marginals[op] = marginals.get(op, 0) + probability
+        probabilities[action_id] = probabilities.get(action_id, 0) + probability
+    return {
+        "choice": selected, "operation": operation, "target": target,
+        "confidence": answer["confidence"], "confidence_scope": "joint_action",
+        "probabilities": probabilities, "joint_probabilities": answer["probabilities"],
+        "operation_probabilities": marginals, "operation_probabilities_source": "sum_of_joint_probabilities",
+        "target_probabilities": {}, "target_confidence": None,
+        "raw_answers": result["answers"], "model": result["model"], "usage": result.get("usage", {}),
+        "latency_ms": round((time.perf_counter() - started) * 1000), "request": body,
+        "chooser": "joint", "joint_choice_count": count,
+    }
+
+
 def field_context(goal, action, page, history):
     return {
         "goal": goal,
@@ -158,6 +227,11 @@ def field_context(goal, action, page, history):
 
 
 def field_text(context):
+    """Generate validated text, with at most one fresh request after a malformed reply.
+
+    Metadata counts generation attempts, not post_json's existing HTTP backoff retries.
+    Latency covers all attempts; usage stays the final reply's usage for compatibility.
+    """
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
@@ -167,32 +241,38 @@ def field_text(context):
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
     started = time.perf_counter()
-    result = post_json(
-        base + "/chat/completions",
-        key,
-        {
-            "model": model,
-            "max_tokens": 1024,
-            "response_format": {"type": "json_object"},
-            **reasoning,
-            "messages": [
-                {"role": "system", "content": TEXT_VALUE},
-                {
-                    "role": "user",
-                    "content": json.dumps(context),
-                },
-            ],
-        },
-    )
-    try:
-        output = json.loads(result["choices"][0]["message"]["content"])
-        value = output["text"]
-        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
-    return value, {
+    body = {
         "model": model,
-        "latency_ms": round((time.perf_counter() - started) * 1000),
-        "usage": result.get("usage", {}),
+        "max_tokens": 1024,
+        "response_format": {"type": "json_object"},
+        **reasoning,
+        "messages": [
+            {"role": "system", "content": TEXT_VALUE},
+            {"role": "user", "content": json.dumps(context)},
+        ],
     }
+    usage_by_attempt = []
+    for attempt in range(1, 3):
+        # Only malformed replies regenerate. Transport/auth failures and call bugs propagate.
+        try:
+            result = post_json(base + "/chat/completions", key, body)
+        except json.JSONDecodeError:
+            result = {}
+        usage_by_attempt.append(result.get("usage", {}) if isinstance(result, dict) else {})
+        try:
+            output = json.loads(result["choices"][0]["message"]["content"])
+            value = output["text"]
+            if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
+                raise ValueError()
+        except (ValueError, KeyError, TypeError, IndexError):
+            if attempt == 2:
+                raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+            # Same input, fresh generation; never repair a value or mutate the browser here.
+            continue
+        return value, {
+            "model": model,
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "usage": usage_by_attempt[-1],
+            "attempts": attempt,
+            "usage_by_attempt": usage_by_attempt,
+        }
