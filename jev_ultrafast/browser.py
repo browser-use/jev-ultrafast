@@ -59,17 +59,22 @@ class Browser:
                       setTimeout(finish,navigation ? 1500 : autocomplete ? 200 : 50);
                       const ready=()=>{
                         if (stopped) return;
-                        const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
-                          .split(/\\s+/).filter(Boolean);
-                        const roots=ids.length ? ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
-                        const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
+                        let suggestionsReady=true;
+                        if (autocomplete) {
+                          const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
+                            .split(/\\s+/).filter(Boolean);
+                          const roots=ids.length ?
+                            ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
+                          const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
+                          suggestionsReady=options.some(e=>{
+                            const r=e.getBoundingClientRect();
+                            return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
+                              e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+                          });
+                        }
                         const navigated=location.href!==action.source_url ||
                           performance.timeOrigin!==action.source_document;
-                        if (++frames>=2 && (!navigation || navigated) && (!autocomplete || options.some(e=>{
-                          const r=e.getBoundingClientRect();
-                          return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
-                            e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-                        }))) finish();
+                        if (++frames>=2 && (!navigation || navigated) && suggestionsReady) finish();
                         else requestAnimationFrame(ready);
                       };
                       requestAnimationFrame(ready);

@@ -25,10 +25,12 @@
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
   const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
     roles.map(role=>'[role="'+role+'"]').join(',');
-  const navigation = e => e.tagName==='A' && ['http:','https:'].includes(e.protocol) &&
-    !e.hasAttribute('download') ? {
-      url:e.href,target:e.target || document.querySelector('base[target]')?.target || '_self'
-    } : null;
+  const navigation = e => {
+    if (e.tagName!=='A' || !['http:','https:'].includes(e.protocol) || e.hasAttribute('download')) return null;
+    const target=e.target || document.querySelector('base[target]')?.target || '_self';
+    // Named contexts are case-sensitive; reserved keywords must retain their special meaning.
+    return {url:e.href,target:!target.startsWith('_') && target===window.name ? '_self' : target};
+  };
   const role = e => {
     const explicit=e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;

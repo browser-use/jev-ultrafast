@@ -1,5 +1,6 @@
 """Navigation settling is deferred until after input, without replaying mutations."""
 
+import json
 from unittest.mock import Mock
 
 import pytest
@@ -26,6 +27,11 @@ def test_link_wait_is_deferred_to_observation(monkeypatch):
     assert [c.args[0]["operation"] for c in operation.call_args_list] == ["act", "observe"]
     assert instance.after_input is None
     instance.call.assert_called_once()
+    assert instance.call.call_args.args == ("Runtime.evaluate",)
+    kwargs = instance.call.call_args.kwargs
+    assert kwargs["awaitPromise"] is True and kwargs["returnByValue"] is True
+    payload = json.loads(kwargs["expression"].rsplit(")(", 1)[1][:-1])
+    assert payload == {**action, "source_url": page["url"], "source_document": 1234}
 
 
 @pytest.mark.parametrize("error", [RuntimeError("Connection lost"), browser.StalePage("Target changed")])

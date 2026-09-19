@@ -137,7 +137,9 @@ uv build
 
 Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
 
-`uv run python scripts/check_navigation.py` checks delayed links, redirects, cancelled navigation, and fast-path exceptions in local browser fixtures without model calls. The link wait is a bounded opportunity for navigation to begin, not proof that a destination has finished loading or that the goal is complete; final outcomes still require independent verification.
+`uv run python scripts/check_navigation.py` checks delayed links, HTTP and same-document redirects, named targets, cancelled navigation, and fast-path exceptions in local browser fixtures without model calls. The link wait is a bounded opportunity for navigation to begin, not proof that a destination has finished loading or that the goal is complete; final outcomes still require independent verification.
+
+A same-tab link to a different URL that cancels navigation entirely can consume the full 1,500 ms wait. `preventDefault()` alone cannot distinguish that case from client-side routing that starts navigation later. This latency tradeoff is covered by both the cancelled-link and delayed-link fixtures; neither case replays the click. The navigation wait does not scan autocomplete options.
 
 ---
 
