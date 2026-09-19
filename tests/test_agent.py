@@ -239,6 +239,31 @@ def test_observation_is_one_atomic_browser_read(monkeypatch):
     assert cdp.call_args.args[0] == "Runtime.evaluate"
 
 
+def test_screenshot_activates_tab_only_in_a_dedicated_browser(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    def run(env):
+        for key in ("BU_CDP_URL", "BU_CDP_WS"):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+
+        def fake(method, **_):
+            return {"data": ""} if method == "Page.captureScreenshot" else {"result": {"value": page()}}
+
+        cdp = Mock(side_effect=fake)
+        monkeypatch.setattr(browser, "cdp", cdp)
+        browser_operation({"operation": "observe", "session": "test", "screenshot": True})
+        return [c.args[0] for c in cdp.call_args_list]
+
+    # The user's own Chrome: the owned background tab must never be activated.
+    assert "Page.bringToFront" not in run({})
+    # A dedicated automation browser has no user tab to disturb, and a hidden tab never renders a frame.
+    calls = run({"BU_CDP_URL": "http://127.0.0.1:9222"})
+    assert calls.index("Page.bringToFront") < calls.index("Page.captureScreenshot")
+    assert "Page.bringToFront" in run({"BU_CDP_WS": "ws://127.0.0.1:9222/devtools/browser/x"})
+
+
 def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     import jev_ultrafast.browser as browser
 
