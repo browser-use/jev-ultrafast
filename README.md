@@ -51,6 +51,19 @@ Target questions are speculative. If the operation is `CLICK`, only `click_targe
 There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
 
 ## Try it
+## Requirements
+
+Before running Jev Ultrafast, make sure you have:
+
+- Python 3.12 or newer
+- Google Chrome installed
+- A valid `TYPESAFE_API_KEY`
+- A valid text model API key (OpenRouter or compatible provider)
+
+You can verify the browser setup with:
+
+```bash
+uv run browser-harness --doctor
 
 ```bash
 git clone https://github.com/browser-use/jev-ultrafast.git
