@@ -67,6 +67,28 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+### Routing model traffic through a proxy
+
+Both model clients are `httpx` with default `trust_env`, so standard proxy
+variables just work — no code changes. This can matter a lot on networks where
+the direct route to openrouter.ai is slow: measured from one such vantage
+point, steady-state decision latency fell from ~1.05 s to ~0.66 s per request
+(-37%) through a local HTTP proxy, because the pooled connection pays the TLS
+handshake once and the proxy exit sits closer to the model backend.
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
+# Required: keep local traffic out of the proxy, or Browser Harness cannot
+# reach Chrome's local CDP endpoint and the agent fails to attach.
+NO_PROXY=127.0.0.1,localhost
+```
+
+The first request through the proxy pays a slower TLS handshake (~1–3 s
+observed); every request after that reuses the connection. One-off `curl`
+timing against the proxy will look *worse* than direct for this reason —
+benchmark with a keep-alive client before deciding.
+
 ## Use the library
 
 ```python
