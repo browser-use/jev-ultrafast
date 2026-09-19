@@ -244,8 +244,7 @@ def test_effort_fallback_preserves_setting(text_http, monkeypatch, setting):
     {"message": "Unsupported value: 'reasoning.enabled' does not support false."},
     {"message": "'reasoning' is not supported with this model."},
     {"param": "reasoning.enabled", "code": "unsupported_value"},
-    # PIN: verbatim api.openai.com rejection of a top-level reasoning_effort, seen
-    # 2026-09-18 with gpt-4.1-mini; param and code are null, so only the message identifies it.
+    # With null param/code, the rejection wording must identify the current field.
     {"message": "Unrecognized request argument supplied: reasoning", "param": None, "code": None},
 ])
 def test_reasoning_validation_errors_allow_fallback(text_http, detail):
@@ -254,6 +253,42 @@ def test_reasoning_validation_errors_allow_fallback(text_http, detail):
     model.field_text({})
     assert len(calls) == 2
     assert calls[1][1]["reasoning_effort"] == "none"
+
+
+def test_request_argument_rejections_reach_omission_and_cache_it(text_http):
+    calls, replies = text_http
+    for field in ("reasoning", "reasoning_effort", "thinking"):
+        replies.append((400, {"error": {
+            "message": f"Unrecognized request argument supplied: {field}",
+            "param": None,
+            "code": None,
+        }}))
+    replies.extend([text_reply(), text_reply()])
+    with pytest.warns(RuntimeWarning, match="Provider defaults apply"):
+        value, info = model.field_text({})
+    assert value == "Zurich" and info["reasoning_attempts"] == 4
+    with pytest.warns(RuntimeWarning, match="Provider defaults apply"):
+        value, cached = model.field_text({})
+    assert value == "Zurich" and cached["reasoning_attempts"] == 1
+    fields = {"reasoning", "reasoning_effort", "thinking"}
+    assert [fields & body.keys() for _, body in calls] == [
+        {"reasoning"}, {"reasoning_effort"}, {"thinking"}, set(), set(),
+    ]
+
+
+@pytest.mark.parametrize("message", [
+    "Invalid parameter max_tokens for reasoning",
+    "Unknown parameter nonreasoning",
+    "Unrecognized request argument supplied: nonreasoning",
+    "Unrecognized request argument supplied: reasoning_effort",
+])
+def test_rejection_message_cannot_swallow_another_field(text_http, message):
+    calls, replies = text_http
+    replies.append((400, {"error": {"message": message, "param": None, "code": None}}))
+    with pytest.raises(model.ModelHTTPError):
+        model.field_text({})
+    assert len(calls) == 1
+    assert not model.REASONING_CONTROLS
 
 
 @pytest.mark.parametrize("status,body", [

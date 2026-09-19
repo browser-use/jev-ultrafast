@@ -204,11 +204,11 @@ def rejected_reasoning(error, control):
     if not isinstance(message, str):
         return False
     # A mere mention (e.g. "max_tokens is too small for reasoning") is not a rejection.
-    # OpenAI says "Unrecognized request argument supplied: reasoning_effort", so tolerate a
-    # couple of filler words on either side of the noun without losing the field anchor.
+    # Accept "Unrecognized request argument supplied: <field>" without swallowing
+    # another parameter name or matching the suffix of an unrelated field.
     return bool(re.search(
-        rf"\b(?:unknown|unrecognized|unrecognised|unexpected|unsupported|invalid)\s+(?:\w+\s+){{0,2}}"
-        rf"(?:parameter|argument|field|key|value)(?:\s+\w+){{0,2}}\s*:?\s*[`'\"]?{path}(?![\w.])"
+        rf"\b(?:unknown|unrecognized|unrecognised|unexpected|unsupported|invalid)\s+(?:request\s+)?"
+        rf"(?:parameter|argument|field|key|value)(?:\s+supplied)?\s*:?\s*[`'\"]?(?<![\w.]){path}(?![\w.])"
         rf"|(?<![\w.]){path}[`'\"]?\s+(?:is\s+)?(?:not supported|not allowed|not permitted|unsupported)\b",
         message,
         re.IGNORECASE,
