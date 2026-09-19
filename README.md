@@ -65,7 +65,7 @@ Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. T
 
 Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
 
-`TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
+`TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Any OpenAI-compatible endpoint can drive the text helper — Gemini, Groq, Fireworks, DeepSeek, OpenAI, and GLM included: set the model and the endpoint that issued the key. The helper resolves the request vocabulary each endpoint accepts (OpenRouter speaks `reasoning`, DeepSeek and Fireworks speak `thinking`, OpenAI's reasoning models take `max_completion_tokens` plus a flat `reasoning_effort`), and sends no reasoning field at all to Gemini, Groq, or an endpoint it does not recognise, because those reject an unknown key outright instead of ignoring it. `TEXT_MODEL_REASONING` overrides that: `none` disables reasoning in the endpoint's own dialect, `omit` sends no reasoning field.
 
 ## Use the library
 
