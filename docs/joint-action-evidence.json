@@ -1,0 +1,1126 @@
+{
+  "final-holdout": {
+    "actual_request_count": 1285,
+    "all_attempt_latency": {
+      "baseline": {
+        "median_s": 2.678584854467772,
+        "n": 120,
+        "p90_s": 3.7281918214401255
+      },
+      "candidate": {
+        "median_s": 2.650599625543691,
+        "n": 120,
+        "p90_s": 3.117178570991382
+      }
+    },
+    "all_common_success": {
+      "median_ratio": 0.9885152444119782,
+      "median_ratio_ci95": [
+        0.9490071185591216,
+        1.0018483905745041
+      ],
+      "n": 96,
+      "p90_ratio": 1.15580446503385,
+      "undefined_bootstrap_draws": 0
+    },
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 941827,
+    "ci_note": "Any undefined draw makes its interval non-estimable; boundary intervals are descriptive only.",
+    "ci_upper_reaches_0_5": false,
+    "completion": {
+      "campaign_requests_after": 2059,
+      "complete": true,
+      "reason": null,
+      "scheduled": 240,
+      "started": 240,
+      "unstarted": 0
+    },
+    "discordance": {
+      "baseline_only": 2,
+      "candidate_only": 6
+    },
+    "endpoint_pass": false,
+    "endpoint_status": "fail",
+    "failure_rates": {
+      "baseline": 0.18333333333333332,
+      "candidate": 0.15
+    },
+    "failure_ratio": 0.8181818181818182,
+    "failure_ratio_ci95": [
+      0.5925925925925926,
+      1.05
+    ],
+    "failures": {
+      "baseline": 22,
+      "candidate": 18
+    },
+    "false_done_count": 0,
+    "fault_activations": {
+      "baseline": 20,
+      "candidate": 20
+    },
+    "four_cell": {
+      "baseline_only": 2,
+      "both_failure": 16,
+      "both_success": 96,
+      "candidate_only": 6
+    },
+    "full_acceptance": false,
+    "full_holdout": true,
+    "latency_by_outcome": {
+      "baseline": {
+        "failure": {
+          "median_s": 0.6322745830984786,
+          "n": 22,
+          "p90_s": 1.4704063882585618
+        },
+        "success": {
+          "median_s": 2.727941333432682,
+          "n": 98,
+          "p90_s": 4.1201633913908156
+        }
+      },
+      "candidate": {
+        "failure": {
+          "median_s": 1.7663812085520476,
+          "n": 18,
+          "p90_s": 2.073177216644399
+        },
+        "success": {
+          "median_s": 2.7337161250179633,
+          "n": 102,
+          "p90_s": 3.162064608372748
+        }
+      }
+    },
+    "mcnemar_exact_p": 0.2890625,
+    "pairs": 120,
+    "per_family": {
+      "delayed": {
+        "failure_rates": {
+          "baseline": 1.0,
+          "candidate": 0.8
+        },
+        "failure_ratio": 0.8,
+        "failures": {
+          "baseline": 20,
+          "candidate": 16
+        },
+        "pairs": 20,
+        "success_rates": {
+          "baseline": 0.0,
+          "candidate": 0.2
+        },
+        "successes": {
+          "baseline": 0,
+          "candidate": 4
+        }
+      },
+      "iframe": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 20,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 20,
+          "candidate": 20
+        }
+      },
+      "malformed": {
+        "failure_rates": {
+          "baseline": 0.05,
+          "candidate": 0.05
+        },
+        "failure_ratio": 1.0,
+        "failures": {
+          "baseline": 1,
+          "candidate": 1
+        },
+        "pairs": 20,
+        "success_rates": {
+          "baseline": 0.95,
+          "candidate": 0.95
+        },
+        "successes": {
+          "baseline": 19,
+          "candidate": 19
+        }
+      },
+      "replacement": {
+        "failure_rates": {
+          "baseline": 0.05,
+          "candidate": 0.0
+        },
+        "failure_ratio": 0.0,
+        "failures": {
+          "baseline": 1,
+          "candidate": 0
+        },
+        "pairs": 20,
+        "success_rates": {
+          "baseline": 0.95,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 19,
+          "candidate": 20
+        }
+      },
+      "shadow": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 20,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 20,
+          "candidate": 20
+        }
+      },
+      "standard": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.05
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 1
+        },
+        "pairs": 20,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 0.95
+        },
+        "successes": {
+          "baseline": 20,
+          "candidate": 19
+        }
+      }
+    },
+    "percentage_point_lift": 3.3333333333333335,
+    "public_and_safety_gates": "Reported separately by parent",
+    "relative_failure_reduction": 0.18181818181818177,
+    "standard_common_success": {
+      "gate_pass": false,
+      "gate_status": "fail",
+      "median_ratio": 0.9428085653505818,
+      "median_ratio_ci95": [
+        0.7582550631447534,
+        1.035950406996182
+      ],
+      "n": 19,
+      "no_count_regression": false,
+      "p90_ratio": 1.230845249576216,
+      "undefined_bootstrap_draws": 0
+    },
+    "status_counts": {
+      "baseline": {
+        "blocked": 20,
+        "done": 98,
+        "predicted": 2
+      },
+      "candidate": {
+        "blocked": 16,
+        "done": 102,
+        "predicted": 1,
+        "ready": 1
+      }
+    },
+    "success_rates": {
+      "baseline": 0.8166666666666667,
+      "candidate": 0.85
+    },
+    "successes": {
+      "baseline": 98,
+      "candidate": 102
+    },
+    "undefined_ratio_bootstrap_draws": 0
+  },
+  "final-public": {
+    "complete": true,
+    "started": 18,
+    "scheduled": 18,
+    "accepted": false,
+    "gates": {
+      "complete": true,
+      "common_per_family": false,
+      "no_baseline_only": false,
+      "candidate_count": true,
+      "wall_observed": true,
+      "speed": true
+    },
+    "successes": {
+      "baseline": 8,
+      "candidate": 8
+    },
+    "families": {
+      "hotel": {
+        "successes": {
+          "baseline": 3,
+          "candidate": 3
+        },
+        "common_successes": 3,
+        "baseline_only": 0,
+        "candidate_only": 0,
+        "paired_wall": {
+          "values": [
+            0.9895536325025374,
+            0.9368287803071048,
+            1.1192134748082074
+          ],
+          "missing": 0,
+          "median": 0.9895536325025374,
+          "p90": 1.0932815063470733
+        },
+        "all_attempt_wall_ms": {
+          "baseline": {
+            "values": [
+              3084.9742498248816,
+              3428.763624979183,
+              3536.921165883541
+            ],
+            "missing": 0,
+            "median": 3428.763624979183,
+            "p90": 3515.2896577026695
+          },
+          "candidate": {
+            "values": [
+              3452.744749840349,
+              3392.9455000907183,
+              3313.489541877061
+            ],
+            "missing": 0,
+            "median": 3392.9455000907183,
+            "p90": 3440.784899890423
+          }
+        },
+        "success_wall_ms": {
+          "baseline": {
+            "values": [
+              3084.9742498248816,
+              3428.763624979183,
+              3536.921165883541
+            ],
+            "missing": 0,
+            "median": 3428.763624979183,
+            "p90": 3515.2896577026695
+          },
+          "candidate": {
+            "values": [
+              3452.744749840349,
+              3392.9455000907183,
+              3313.489541877061
+            ],
+            "missing": 0,
+            "median": 3392.9455000907183,
+            "p90": 3440.784899890423
+          }
+        }
+      },
+      "wikipedia": {
+        "successes": {
+          "baseline": 3,
+          "candidate": 3
+        },
+        "common_successes": 3,
+        "baseline_only": 0,
+        "candidate_only": 0,
+        "paired_wall": {
+          "values": [
+            1.0796657343250347,
+            0.8408717651028058,
+            1.157928323573474
+          ],
+          "missing": 0,
+          "median": 1.0796657343250347,
+          "p90": 1.1422758057237863
+        },
+        "all_attempt_wall_ms": {
+          "baseline": {
+            "values": [
+              6158.103666966781,
+              3474.289083853364,
+              3535.6165831908584
+            ],
+            "missing": 0,
+            "median": 3535.6165831908584,
+            "p90": 5633.6062502115965
+          },
+          "candidate": {
+            "values": [
+              5178.175500128418,
+              3751.0708749759942,
+              4093.990582972765
+            ],
+            "missing": 0,
+            "median": 4093.990582972765,
+            "p90": 4961.338516697288
+          }
+        },
+        "success_wall_ms": {
+          "baseline": {
+            "values": [
+              6158.103666966781,
+              3474.289083853364,
+              3535.6165831908584
+            ],
+            "missing": 0,
+            "median": 3535.6165831908584,
+            "p90": 5633.6062502115965
+          },
+          "candidate": {
+            "values": [
+              5178.175500128418,
+              3751.0708749759942,
+              4093.990582972765
+            ],
+            "missing": 0,
+            "median": 4093.990582972765,
+            "p90": 4961.338516697288
+          }
+        }
+      },
+      "flights": {
+        "successes": {
+          "baseline": 2,
+          "candidate": 2
+        },
+        "common_successes": 1,
+        "baseline_only": 1,
+        "candidate_only": 1,
+        "paired_wall": {
+          "values": [
+            0.949130685893066
+          ],
+          "missing": 0,
+          "median": 0.949130685893066,
+          "p90": 0.949130685893066
+        },
+        "all_attempt_wall_ms": {
+          "baseline": {
+            "values": [
+              9598.00879098475,
+              7639.594957930967,
+              7919.5758330170065
+            ],
+            "missing": 0,
+            "median": 7919.5758330170065,
+            "p90": 9262.322199391201
+          },
+          "candidate": {
+            "values": [
+              9109.764666995034,
+              8404.745457926765,
+              7251.9561250228435
+            ],
+            "missing": 0,
+            "median": 8404.745457926765,
+            "p90": 8968.76082518138
+          }
+        },
+        "success_wall_ms": {
+          "baseline": {
+            "values": [
+              9598.00879098475,
+              7919.5758330170065
+            ],
+            "missing": 0,
+            "median": 8758.792312000878,
+            "p90": 9430.165495187975
+          },
+          "candidate": {
+            "values": [
+              9109.764666995034,
+              8404.745457926765
+            ],
+            "missing": 0,
+            "median": 8757.2550624609,
+            "p90": 9039.262746088207
+          }
+        }
+      }
+    },
+    "baseline_only": 1,
+    "candidate_only": 1,
+    "success_ratio": 1.0,
+    "paired_wall": {
+      "values": [
+        0.9895536325025374,
+        0.9368287803071048,
+        1.1192134748082074,
+        1.0796657343250347,
+        0.8408717651028058,
+        1.157928323573474,
+        0.949130685893066
+      ],
+      "missing": 0,
+      "median": 0.9895536325025374,
+      "p90": 1.134699414314314
+    },
+    "all_attempt_wall_ms": {
+      "baseline": [
+        9598.00879098475,
+        6158.103666966781,
+        3084.9742498248816,
+        7639.594957930967,
+        3474.289083853364,
+        3428.763624979183,
+        3536.921165883541,
+        7919.5758330170065,
+        3535.6165831908584
+      ],
+      "candidate": [
+        9109.764666995034,
+        5178.175500128418,
+        3452.744749840349,
+        8404.745457926765,
+        3751.0708749759942,
+        3392.9455000907183,
+        3313.489541877061,
+        7251.9561250228435,
+        4093.990582972765
+      ]
+    },
+    "success_wall_ms": {
+      "baseline": [
+        9598.00879098475,
+        6158.103666966781,
+        3084.9742498248816,
+        3474.289083853364,
+        3428.763624979183,
+        3536.921165883541,
+        7919.5758330170065,
+        3535.6165831908584
+      ],
+      "candidate": [
+        9109.764666995034,
+        5178.175500128418,
+        3452.744749840349,
+        8404.745457926765,
+        3751.0708749759942,
+        3392.9455000907183,
+        3313.489541877061,
+        4093.990582972765
+      ]
+    },
+    "status_counts": {
+      "baseline": {
+        "done": 8,
+        "ready": 1
+      },
+      "candidate": {
+        "done": 9
+      }
+    },
+    "false_done": {
+      "baseline": 0,
+      "candidate": 1
+    },
+    "bootstrap": {
+      "draws": 10000,
+      "seed": 941827,
+      "method": "stratified paired percentile",
+      "success_ratio": {
+        "undefined": 0,
+        "estimable": true,
+        "ci95": [
+          0.6666666666666666,
+          1.5
+        ]
+      },
+      "paired_wall": {
+        "undefined": 0,
+        "estimable": true,
+        "ci95": [
+          0.9368287803071048,
+          1.1192134748082074
+        ]
+      },
+      "caveat": "Descriptive fixed-family repeat resampling, not new task types or proof of certainty/noninferiority."
+    },
+    "completion": {
+      "complete": true,
+      "reason": null,
+      "started": 18,
+      "scheduled": 18,
+      "unstarted": 0,
+      "campaign_requests_after": 2252
+    }
+  },
+  "h5-validation": {
+    "actual_request_count": 197,
+    "all_attempt_latency": {
+      "baseline": {
+        "median_s": 2.6609699999680743,
+        "n": 18,
+        "p90_s": 4.402528116316535
+      },
+      "candidate": {
+        "median_s": 2.632725978968665,
+        "n": 18,
+        "p90_s": 4.508451532991604
+      }
+    },
+    "all_common_success": {
+      "median_ratio": 1.0162279052563938,
+      "median_ratio_ci95": [
+        0.9277869565274932,
+        1.1373534248870358
+      ],
+      "n": 14,
+      "p90_ratio": 1.4708786211965368,
+      "undefined_bootstrap_draws": 0
+    },
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 941827,
+    "ci_note": "Any undefined draw makes its interval non-estimable; boundary intervals are descriptive only.",
+    "ci_upper_reaches_0_5": false,
+    "completion": {
+      "campaign_requests_after": 735,
+      "complete": true,
+      "reason": null,
+      "scheduled": 36,
+      "started": 36,
+      "unstarted": 0
+    },
+    "discordance": {
+      "baseline_only": 1,
+      "candidate_only": 2
+    },
+    "endpoint_pass": false,
+    "endpoint_status": "fail",
+    "failure_rates": {
+      "baseline": 0.16666666666666666,
+      "candidate": 0.1111111111111111
+    },
+    "failure_ratio": 0.6666666666666666,
+    "failure_ratio_ci95": [
+      0.0,
+      1.3333333333333333
+    ],
+    "failures": {
+      "baseline": 3,
+      "candidate": 2
+    },
+    "false_done_count": 0,
+    "fault_activations": {
+      "baseline": 3,
+      "candidate": 3
+    },
+    "four_cell": {
+      "baseline_only": 1,
+      "both_failure": 1,
+      "both_success": 14,
+      "candidate_only": 2
+    },
+    "full_acceptance": false,
+    "full_holdout": false,
+    "latency_by_outcome": {
+      "baseline": {
+        "failure": {
+          "median_s": 0.5953327498864383,
+          "n": 3,
+          "p90_s": 0.6486784835811704
+        },
+        "success": {
+          "median_s": 2.702743292087689,
+          "n": 15,
+          "p90_s": 4.732136691594496
+        }
+      },
+      "candidate": {
+        "failure": {
+          "median_s": 1.880679895519279,
+          "n": 2,
+          "p90_s": 2.1897882454795763
+        },
+        "success": {
+          "median_s": 2.6473838329548016,
+          "n": 16,
+          "p90_s": 4.676710666390136
+        }
+      }
+    },
+    "mcnemar_exact_p": 1.0,
+    "pairs": 18,
+    "per_family": {
+      "delayed": {
+        "failure_rates": {
+          "baseline": 1.0,
+          "candidate": 0.3333333333333333
+        },
+        "failure_ratio": 0.3333333333333333,
+        "failures": {
+          "baseline": 3,
+          "candidate": 1
+        },
+        "pairs": 3,
+        "success_rates": {
+          "baseline": 0.0,
+          "candidate": 0.6666666666666666
+        },
+        "successes": {
+          "baseline": 0,
+          "candidate": 2
+        }
+      },
+      "iframe": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 3,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 3,
+          "candidate": 3
+        }
+      },
+      "malformed": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.3333333333333333
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 1
+        },
+        "pairs": 3,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 0.6666666666666666
+        },
+        "successes": {
+          "baseline": 3,
+          "candidate": 2
+        }
+      },
+      "replacement": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 3,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 3,
+          "candidate": 3
+        }
+      },
+      "shadow": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 3,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 3,
+          "candidate": 3
+        }
+      },
+      "standard": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 3,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 3,
+          "candidate": 3
+        }
+      }
+    },
+    "percentage_point_lift": 5.555555555555555,
+    "public_and_safety_gates": "Reported separately by parent",
+    "relative_failure_reduction": 0.33333333333333337,
+    "standard_common_success": {
+      "gate_pass": false,
+      "gate_status": "inconclusive",
+      "median_ratio": 0.9605859613966445,
+      "median_ratio_ci95": [
+        0.7446084459720015,
+        1.102288025347196
+      ],
+      "n": 3,
+      "no_count_regression": true,
+      "p90_ratio": 1.0739476125570857,
+      "undefined_bootstrap_draws": 0
+    },
+    "status_counts": {
+      "baseline": {
+        "blocked": 3,
+        "done": 15
+      },
+      "candidate": {
+        "blocked": 1,
+        "done": 16,
+        "predicted": 1
+      }
+    },
+    "success_rates": {
+      "baseline": 0.8333333333333334,
+      "candidate": 0.8888888888888888
+    },
+    "successes": {
+      "baseline": 15,
+      "candidate": 16
+    },
+    "undefined_ratio_bootstrap_draws": 0
+  },
+  "h5-negative-validation": {
+    "actual_request_count": 39,
+    "all_attempt_latency": {
+      "baseline": {
+        "median_s": 0.6171411875402555,
+        "n": 8,
+        "p90_s": 6.071235174895262
+      },
+      "candidate": {
+        "median_s": 0.6220348336501047,
+        "n": 8,
+        "p90_s": 0.7422873000381514
+      }
+    },
+    "all_common_success": {
+      "median_ratio": 1.030403643308648,
+      "median_ratio_ci95": [
+        1.030403643308648,
+        1.030403643308648
+      ],
+      "n": 6,
+      "p90_ratio": 1.3017263052420214,
+      "undefined_bootstrap_draws": 0
+    },
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 941827,
+    "ci_note": "Any undefined draw makes its interval non-estimable; boundary intervals are descriptive only.",
+    "ci_upper_reaches_0_5": true,
+    "completion": {
+      "campaign_requests_after": 774,
+      "complete": true,
+      "reason": null,
+      "scheduled": 16,
+      "started": 16,
+      "unstarted": 0
+    },
+    "discordance": {
+      "baseline_only": 0,
+      "candidate_only": 2
+    },
+    "endpoint_pass": true,
+    "endpoint_status": "pass",
+    "failure_rates": {
+      "baseline": 0.25,
+      "candidate": 0.0
+    },
+    "failure_ratio": 0.0,
+    "failure_ratio_ci95": [
+      0.0,
+      0.0
+    ],
+    "failures": {
+      "baseline": 2,
+      "candidate": 0
+    },
+    "false_done_count": 0,
+    "fault_activations": {
+      "baseline": 0,
+      "candidate": 0
+    },
+    "four_cell": {
+      "baseline_only": 0,
+      "both_failure": 0,
+      "both_success": 6,
+      "candidate_only": 2
+    },
+    "full_acceptance": false,
+    "full_holdout": false,
+    "latency_by_outcome": {
+      "baseline": {
+        "failure": {
+          "median_s": 7.7834005415206775,
+          "n": 2,
+          "p90_s": 11.207731274771504
+        },
+        "success": {
+          "median_s": 0.6060921663884073,
+          "n": 6,
+          "p90_s": 0.6252091251080856
+        }
+      },
+      "candidate": {
+        "failure": {
+          "median_s": null,
+          "n": 0,
+          "p90_s": null
+        },
+        "success": {
+          "median_s": 0.6220348336501047,
+          "n": 8,
+          "p90_s": 0.7422873000381514
+        }
+      }
+    },
+    "mcnemar_exact_p": 0.5,
+    "pairs": 8,
+    "per_family": {
+      "already-complete": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 1,
+          "candidate": 1
+        }
+      },
+      "autosave-input": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 1,
+          "candidate": 1
+        }
+      },
+      "autosubmit-select": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 1,
+          "candidate": 1
+        }
+      },
+      "filled-correct": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 1,
+          "candidate": 1
+        }
+      },
+      "missing-value": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 1,
+          "candidate": 1
+        }
+      },
+      "no-fields": {
+        "failure_rates": {
+          "baseline": 1.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": 0.0,
+        "failures": {
+          "baseline": 1,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 0.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 0,
+          "candidate": 1
+        }
+      },
+      "tempting-wrong-action": {
+        "failure_rates": {
+          "baseline": 0.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": null,
+        "failures": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 1.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 1,
+          "candidate": 1
+        }
+      },
+      "unrelated-field": {
+        "failure_rates": {
+          "baseline": 1.0,
+          "candidate": 0.0
+        },
+        "failure_ratio": 0.0,
+        "failures": {
+          "baseline": 1,
+          "candidate": 0
+        },
+        "pairs": 1,
+        "success_rates": {
+          "baseline": 0.0,
+          "candidate": 1.0
+        },
+        "successes": {
+          "baseline": 0,
+          "candidate": 1
+        }
+      }
+    },
+    "percentage_point_lift": 25.0,
+    "public_and_safety_gates": "Reported separately by parent",
+    "relative_failure_reduction": 1.0,
+    "standard_common_success": {
+      "gate_pass": false,
+      "gate_status": "inconclusive",
+      "median_ratio": null,
+      "median_ratio_ci95": [
+        null,
+        null
+      ],
+      "n": 0,
+      "no_count_regression": true,
+      "p90_ratio": null,
+      "undefined_bootstrap_draws": 10000
+    },
+    "status_counts": {
+      "baseline": {
+        "blocked": 2,
+        "done": 4,
+        "ready": 2
+      },
+      "candidate": {
+        "blocked": 4,
+        "done": 4
+      }
+    },
+    "success_rates": {
+      "baseline": 0.75,
+      "candidate": 1.0
+    },
+    "successes": {
+      "baseline": 6,
+      "candidate": 8
+    },
+    "undefined_ratio_bootstrap_draws": 0
+  },
+  "production_sha256": {
+    "jev_ultrafast/agent.py": "50d97aa2a142beaaa699477614b547e650b7afef32c6150b5da429ecf6f88ec8",
+    "jev_ultrafast/model.py": "ec5be0de0e06c0b6424ba7683b30520072f63acd25f2a9292d87ee30a20ae60f"
+  },
+  "baseline_commit": "91d8fc5f0b9010823b81cffa01227f7450285564",
+  "note": "Compact summaries, not a self-contained replay bundle. Public raw DOM observations were not retained; public checks cannot be independently replayed from these artifacts."
+}

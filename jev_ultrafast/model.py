@@ -148,6 +148,75 @@ def choose(state, goal, history):
     }
 
 
+def choose_joint(state, goal, history):
+    """H5: one observed action head; oversized spaces use the unchanged chooser."""
+    elements, targets, controls = action_space(state["actions"])
+    offered, criteria = {}, {}
+    for operation, candidates in targets.items():
+        for target, action in candidates.items():
+            key = f"{operation}:{target}"
+            offered[key] = (operation, target, action["id"])
+            criteria[key] = {
+                "operation": operation,
+                "element": f"[{target}] {action['label']}",
+                "current_value": action.get("current_value", action.get("value", "")),
+                **{k: action[k] for k in ("role", "checked", "selected", "expanded") if k in action},
+            }
+            if operation == "SELECT":
+                criteria[key]["option_value"] = action["value"]
+    for operation, action in controls.items():
+        offered[operation] = (operation, None, action["id"])
+        criteria[operation] = action["label"]
+    for operation, label in {
+        "DONE": "Every requirement is visibly satisfied.",
+        "BLOCKED": "No supported operation can progress.",
+    }.items():
+        offered[operation] = (operation, None, operation)
+        criteria[operation] = label
+    count = len(offered)
+    if count > 64:
+        return {**choose(state, goal, history), "chooser": "multifactor_fallback", "joint_choice_count": count}
+    body = {
+        "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
+        "state": {
+            "page": {k: state[k] for k in ("url", "title", "text")},
+            "elements": elements,
+            "recent_actions": [
+                {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
+            ],
+        },
+        "questions": {"action": {
+            "type": "choice", "criteria": criteria,
+            "instructions": {"goal": goal, "rules": [
+                NEXT_ACTION,
+                "Choose one complete offered operation/target pair or terminal. "
+                "Use the entire goal, current values, nearby text, and history. "
+                "Do not choose a field that already contains the requested value. "
+                "SELECT uses only its observed option. Choose only an offered choice.",
+            ]},
+        }},
+    }
+    started = time.perf_counter()
+    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    answer = validate_choice(result["answers"].get("action", {}), offered)
+    operation, target, selected = offered[answer["choice"]]
+    marginals, probabilities = {}, {}
+    for key, probability in answer["probabilities"].items():
+        op, _, action_id = offered[key]
+        marginals[op] = marginals.get(op, 0) + probability
+        probabilities[action_id] = probabilities.get(action_id, 0) + probability
+    return {
+        "choice": selected, "operation": operation, "target": target,
+        "confidence": answer["confidence"], "confidence_scope": "joint_action",
+        "probabilities": probabilities, "joint_probabilities": answer["probabilities"],
+        "operation_probabilities": marginals, "operation_probabilities_source": "sum_of_joint_probabilities",
+        "target_probabilities": {}, "target_confidence": None,
+        "raw_answers": result["answers"], "model": result["model"], "usage": result.get("usage", {}),
+        "latency_ms": round((time.perf_counter() - started) * 1000), "request": body,
+        "chooser": "joint", "joint_choice_count": count,
+    }
+
+
 def field_context(goal, action, page, history):
     return {
         "goal": goal,
