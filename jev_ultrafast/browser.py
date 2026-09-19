@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -117,6 +118,11 @@ def fingerprint(state):
     return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
+def dedicated_browser():
+    """True when browser-harness is pointed at an automation browser rather than the user's Chrome."""
+    return bool(os.environ.get("BU_CDP_URL") or os.environ.get("BU_CDP_WS"))
+
+
 def browser_operation(request):
     operation = request["operation"]
     session = request["session"]
@@ -190,5 +196,10 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
+        if dedicated_browser():
+            # A tab that is not visible never produces a compositor frame, so Page.captureScreenshot
+            # blocks until the IPC timeout. Activating the tab is safe in a dedicated automation browser
+            # (BU_CDP_URL / BU_CDP_WS); in the user's own Chrome the owned tab stays in the background.
+            call("Page.bringToFront")
         info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
     return info
