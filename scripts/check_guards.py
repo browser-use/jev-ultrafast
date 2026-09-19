@@ -15,6 +15,7 @@ HTML = """<!doctype html><title>Guard checks</title>
 
 
 def main():
+    check_transparent_controls()
     browser = Browser("data:text/html," + quote(HTML))
     passed = []
     try:
@@ -131,6 +132,51 @@ def main():
         browser.close()
     print("\n".join(passed))
     print(f"PASS: {len(passed)} browser guard checks; no model calls")
+
+
+def check_transparent_controls():
+    html = """<!doctype html><title>Styled native controls</title>
+      <style>body{margin:30px}label{display:block;padding:12px}
+      input{width:24px;height:24px;opacity:0}</style>
+      <label><input type=radio name=stops id=any checked>Any stops</label>
+      <label><input type=radio name=stops id=direct>Direct only</label>
+      <label><input type=checkbox id=bag>Include bag</label>
+      <label><input type=radio disabled>Disabled</label>
+      <label style="opacity:0"><input type=radio>Invisible label</label>
+      <label><input type=radio style="display:none">No layout</label>
+      <label><input type=radio style="visibility:hidden">Hidden</label>
+      <label aria-hidden=true><input type=radio>Aria hidden</label>
+      <input type=radio aria-label="No visible label">
+      <button style="opacity:0">Invisible button</button>"""
+    with_browser = Browser("data:text/html," + quote(html))
+    try:
+        page = with_browser.observe(screenshot=False)
+        controls = [a for a in page["actions"] if a["kind"] == "click"]
+        assert {a["label"] for a in controls} == {"Any stops", "Direct only", "Include bag"}, controls
+        direct = next(a for a in controls if a["label"] == "Direct only")
+        assert direct["role"] == "radio" and direct["checked"] == "false"
+        with_browser.act(direct, page)
+        assert with_browser.evaluate("document.getElementById('direct').checked") is True
+        assert with_browser.evaluate("document.getElementById('any').checked") is False
+        assert not with_browser.fresh(page, direct)
+        page = with_browser.observe(screenshot=False)
+        bag = next(a for a in page["actions"] if a["label"] == "Include bag")
+        with_browser.act(bag, page)
+        assert with_browser.evaluate("document.getElementById('bag').checked") is True
+        page = with_browser.observe(screenshot=False)
+        direct = next(a for a in page["actions"] if a["label"] == "Direct only")
+        with_browser.evaluate("const cover=document.createElement('div');"
+                              "cover.style.cssText='position:fixed;inset:0;z-index:999;background:white';"
+                              "document.body.append(cover)")
+        try:
+            with_browser.act(direct, page)
+        except (RuntimeError, StalePage):
+            pass
+        else:
+            raise AssertionError("Covered transparent radio accepted a click")
+        print("PASS: transparent native controls, checked state, exclusions and occlusion")
+    finally:
+        with_browser.close()
 
 
 if __name__ == "__main__":
