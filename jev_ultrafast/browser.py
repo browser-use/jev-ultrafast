@@ -17,6 +17,13 @@ class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
 
 
+def missing_chrome_target(error):
+    detail = error.args[0] if getattr(error, "args", None) else error
+    if isinstance(detail, dict):
+        return detail.get("code") == -32602 or "No target with given id found" in str(detail.get("message", ""))
+    return "No target with given id found" in str(error)
+
+
 class Browser:
     def __init__(self, url):
         ensure_daemon()
@@ -107,9 +114,16 @@ class Browser:
         return result
 
     def close(self):
-        if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
-            self.target = None
+        target, self.target = self.target, None
+        if not target:
+            return
+        try:
+            cdp("Target.closeTarget", targetId=target)
+        except RuntimeError as error:
+            # Chrome already discarded the tab. Keep this instance closable so
+            # the inspector can Start demo again.
+            if not missing_chrome_target(error):
+                raise
 
 
 def fingerprint(state):
