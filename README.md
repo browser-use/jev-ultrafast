@@ -125,6 +125,10 @@ The same policy opened the requested Wikipedia article in **2.798 s** and passed
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
+## Ports
+
+- [Jev for Chrome](https://github.com/chy4pro/jev-for-chrome) — unofficial Chrome extension (Manifest V3) that runs the same observe → decide → act loop inside the user's own tabs, with OpenRouter, TypeSafe or Cloudflare as the Jev provider. Community project, MIT.
+
 ## Development
 
 ```bash
