@@ -7,8 +7,16 @@
   };
   for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
   const safe = e => !['password','file','hidden'].includes(e.type);
-  const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
-    e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  const visible = e => {
+    if (e.closest('[aria-hidden="true"],[inert]')) return false;
+    if (e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return true;
+    // Styled native toggles can be transparent while their label remains visible.
+    return e.tagName==='INPUT' && ['radio','checkbox'].includes(e.type) &&
+      e.checkVisibility({checkOpacity:false,checkVisibilityCSS:true}) &&
+      [...e.labels].some(label => !label.closest('[aria-hidden="true"],[inert]') &&
+        label.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
+  };
+  cache.visible=visible;
   const name = (e,seen=new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
