@@ -91,6 +91,8 @@ uv run --env-file .env python examples/run.py \
 
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
+`uv run --env-file .env python examples/observe.py --url https://catalog.example.com/ --allow catalog.example.com --goal 'Search for "classic widget 120 x 240" and stop when result listings are visible. Read only: no sign-in, cart, enquiry, or contact actions.'` runs a read-only observation: the agent searches, code-owned scrolling walks the loaded results, and visible priced cards become raw `candidate` observations with `review_status: "pending"`. It verifies the final host and the read-only action history, and never touches sign-in, cart, checkout, enquiry, or contact controls. See [docs/observations.md](docs/observations.md).
+
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
