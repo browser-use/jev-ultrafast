@@ -124,6 +124,37 @@ def main():
         assert value == "Generated", repr(value)
         assert any(a.get("role") == "option" for a in page["actions"])
         passed.append("real text input waits for asynchronous combobox suggestions")
+
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <div style="width:400px;line-height:60px">
+            <a id="fragmented" href="#destination" onclick="event.preventDefault();window.linkClicks++">
+              Short<br>A much longer destination title
+            </a>
+          </div>
+        """))
+        browser.evaluate("window.linkClicks=0")
+        page = browser.observe(screenshot=False)
+        link = next(a for a in page["actions"] if a.get("role") == "link")
+        assert browser.evaluate("(() => {const e=document.querySelector('#fragmented'),"
+                                "r=e.getBoundingClientRect();return !e.contains(document.elementFromPoint("
+                                "r.x+r.width/2,r.y+r.height/2))})()"), "Fixture must reproduce the center gap"
+        browser.act(link, page)
+        assert browser.evaluate("window.linkClicks") == 1
+        passed.append("fragmented link clicks a visible fragment instead of its empty bounding-box center")
+
+        browser.evaluate("(() => {const cover=document.createElement('div');"
+                         "cover.style.cssText='position:fixed;inset:0;z-index:9999;background:white';"
+                         "document.body.append(cover)})()")
+        page = browser.observe(screenshot=False)
+        link = next(a for a in page["actions"] if a.get("role") == "link")
+        try:
+            browser.act(link, page)
+        except StalePage:
+            pass
+        else:
+            raise AssertionError("Covered fragmented link was clicked")
+        assert browser.evaluate("window.linkClicks") == 1
+        passed.append("fragment fallback still rejects a fully covered link")
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
