@@ -271,3 +271,69 @@ def test_non_json_error_body_falls_back_to_the_status(monkeypatch):
     monkeypatch.setattr(model.CLIENT, "post", Mock(return_value=_error_response(400, ValueError("not json"))))
     with pytest.raises(RuntimeError, match="HTTP 400"):
         model.post_json("https://api.example.com/v1/chat/completions", "test", {})
+
+
+def test_mixed_case_openai_hostname_is_recognised(monkeypatch):
+    """`https://API.OpenAI.com/v1` is a valid hostname; an exact substring test missed it, so
+    o4-mini got `max_tokens` and no `reasoning_effort` — both of which OpenAI rejects."""
+    _clear(monkeypatch)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://API.OpenAI.com/v1")
+    monkeypatch.setenv("TEXT_MODEL", "o4-mini")
+    post = _capture(monkeypatch)
+    model.field_text({"goal": "Find a flight"})
+    body = _body(post)
+    assert body["max_completion_tokens"] == 1024
+    assert body["reasoning_effort"] == "low"
+
+
+def test_openai_reasoning_model_behind_a_proxy_gets_the_openai_fields(monkeypatch):
+    """The vocabulary follows the model: an o-series model served by a gateway or Azure deployment
+    needs `max_completion_tokens` and `reasoning_effort` just as much as one served by OpenAI."""
+    _clear(monkeypatch)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://my-gateway.internal/v1")
+    monkeypatch.setenv("TEXT_MODEL", "o4-mini")
+    post = _capture(monkeypatch)
+    model.field_text({"goal": "Find a flight"})
+    body = _body(post)
+    assert body["max_completion_tokens"] == 1024
+    assert body["reasoning_effort"] == "low"
+    assert "max_tokens" not in body
+
+
+def test_vendor_prefixed_openai_reasoning_model_is_recognised(monkeypatch):
+    """A router's `openai/o4-mini` spelling is the same model."""
+    _clear(monkeypatch)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("TEXT_MODEL", "openai/o4-mini")
+    post = _capture(monkeypatch)
+    model.field_text({"goal": "Find a flight"})
+    body = _body(post)
+    assert body["max_completion_tokens"] == 1024
+    assert body["reasoning_effort"] == "low"
+
+
+def test_groq_gpt_oss_is_not_mistaken_for_an_openai_reasoning_model(monkeypatch):
+    """`openai/gpt-oss-20b` is served by Groq and must keep the omit dialect."""
+    _clear(monkeypatch)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("TEXT_MODEL", "openai/gpt-oss-20b")
+    post = _capture(monkeypatch)
+    model.field_text({"goal": "Find a flight"})
+    body = _body(post)
+    assert body["max_tokens"] == 1024
+    assert "reasoning_effort" not in body and "reasoning" not in body and "thinking" not in body
+
+
+def test_deepseek_host_still_speaks_thinking(monkeypatch):
+    """The provider table still governs non-OpenAI reasoning models."""
+    _clear(monkeypatch)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://API.DeepSeek.com/v1")
+    monkeypatch.setenv("TEXT_MODEL", "deepseek-chat")
+    post = _capture(monkeypatch)
+    model.field_text({"goal": "Find a flight"})
+    assert _body(post)["thinking"] == {"type": "disabled"}

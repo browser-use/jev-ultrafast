@@ -4,6 +4,7 @@ import json
 import math
 import os
 import time
+import urllib.parse
 
 import httpx
 
@@ -222,7 +223,6 @@ PROVIDER_DIALECTS = (
     ("api.groq.com", "omit"),
     ("generativelanguage.googleapis.com", "omit"),
 )
-OPENAI_HOST = "api.openai.com"
 OPENAI_REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
 DEEPSEEK_BASE = "https://api.deepseek.com/v1"
 
@@ -232,26 +232,39 @@ def is_first_party_deepseek(model):
     return model == "deepseek-chat" or model.startswith("deepseek-")
 
 
+def host_of(base):
+    """The lowercase hostname, so `https://API.OpenAI.com/v1` matches like the lowercase form."""
+    return urllib.parse.urlparse(base).netloc.lower()
+
+
 def is_openai_reasoning_model(model):
     """OpenAI's reasoning families: they take `max_completion_tokens` and a flat `reasoning_effort`
-    where gpt-4o/gpt-4.1 take `max_tokens` and reject `reasoning_effort` outright."""
-    return model.startswith(OPENAI_REASONING_PREFIXES)
+    where gpt-4o/gpt-4.1 take `max_tokens` and reject `reasoning_effort` outright.
+
+    Checked on the model rather than the host, because the same model reached through a proxy, an
+    Azure deployment, or a router needs the same two fields. A leading `vendor/` segment (the
+    OpenRouter spelling) is ignored so `openai/o4-mini` is recognised too.
+    """
+    name = model.strip().lower()
+    return name.rsplit("/", 1)[-1].startswith(OPENAI_REASONING_PREFIXES)
 
 
 def reasoning_dialect(base, model):
-    if OPENAI_HOST in base:
-        return "effort" if is_openai_reasoning_model(model) else "omit"
-    for host, dialect in PROVIDER_DIALECTS:
-        if host in base:
+    # Model first: every endpoint tested (OpenRouter, Fireworks, Groq, Gemini) accepts and ignores
+    # `reasoning_effort`, so an OpenAI reasoning model gets its own vocabulary even behind a proxy.
+    if is_openai_reasoning_model(model):
+        return "effort"
+    host = host_of(base)
+    for known, dialect in PROVIDER_DIALECTS:
+        if known in host:
             return dialect
     return "omit"
 
 
 def token_limit_field(base, model):
-    """o-series and gpt-5 400 on `max_tokens` ("Use 'max_completion_tokens' instead")."""
-    if OPENAI_HOST in base and is_openai_reasoning_model(model):
-        return "max_completion_tokens"
-    return "max_tokens"
+    """o-series and gpt-5 400 on `max_tokens` ("Use 'max_completion_tokens' instead"), wherever they
+    are served from; every endpoint tested accepts `max_completion_tokens` for other models too."""
+    return "max_completion_tokens" if is_openai_reasoning_model(model) else "max_tokens"
 
 
 def field_text(context):
