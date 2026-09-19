@@ -9,6 +9,11 @@ from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
 
+def no_progress(history):
+    recent = history[-3:]
+    return len(recent) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in recent)
+
+
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
@@ -58,7 +63,7 @@ class Agent:
                 return self.command("act", {"fingerprint": state["page"]["fingerprint"]})
             except StalePage:
                 state["decision"] = None
-                state["status"] = "ready"
+                state["status"] = "blocked" if no_progress(state["history"]) else "ready"
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
@@ -114,7 +119,34 @@ class Agent:
                     self.pending_text = (context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
-            state["browser"].act(action, page, text=text)
+            try:
+                state["browser"].act(action, page, text=text)
+            except StalePage:
+                # A pre-input rejection is an observed no-op. Recording it lets the model see the
+                # failed attempt and lets the no-progress check stop an undecidable stale loop.
+                state["history"].append(
+                    {
+                        "step": len(state["history"]) + 1,
+                        "action": action["label"],
+                        "kind": action["kind"],
+                        "choice": selected,
+                        "probability": decision["probabilities"][selected],
+                        "confidence": decision["confidence"],
+                        "latency_ms": decision["latency_ms"],
+                        "text": text,
+                        "text_helper": helper["model"] if helper else None,
+                        "text_latency_ms": helper["latency_ms"] if helper else 0,
+                        "operation": decision["operation"],
+                        "target": decision["target"],
+                        "page_changed": False,
+                        "url": page["url"],
+                        "usage": decision["usage"],
+                        "executed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
+                        "elapsed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
+                        "stale": True,
+                    }
+                )
+                raise
             self.pending_text = None
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             # Record execution before observing. A stale post-action observation must not erase the action.
@@ -150,12 +182,7 @@ class Agent:
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )
-            repeated = state["history"][-3:]
-            state["status"] = (
-                "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
-                else "ready"
-            )
+            state["status"] = "blocked" if no_progress(state["history"]) else "ready"
         else:
             raise ValueError("Unknown command")
         return self.snapshot()
