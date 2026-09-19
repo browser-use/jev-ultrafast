@@ -218,6 +218,30 @@ def test_loading_waits_do_not_trigger_no_progress_stop(runner):
     assert len(runner.state["history"]) == 5 and runner.state["status"] == "ready"
 
 
+def test_stale_attempt_is_recorded_as_a_no_change(runner):
+    runner.state["decision"] = decision("e3")
+    runner.state["browser"].act.side_effect = StalePage("changed before input")
+    with pytest.raises(StalePage):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    h = runner.state["history"][-1]
+    assert h["action"] == "Go" and h["kind"] == "click"
+    assert h["page_changed"] is False and h["stale"] is True
+    assert h["choice"] == "e3"
+
+
+def test_repeated_stale_attempts_block_instead_of_burning_the_budget(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("e3")))
+    runner.state["browser"].act.side_effect = StalePage("changed before input")
+    for _ in range(3):
+        runner.command("tick")
+    assert runner.state["status"] == "blocked"
+    assert len(runner.state["history"]) == 3
+    assert all(h["stale"] and h["action"] == "Go" for h in runner.state["history"])
+    # The next tick refuses to predict: the loop has already stopped.
+    with pytest.raises(ValueError, match="stopped"):
+        runner.command("tick")
+
+
 def test_stale_observation_preserves_executed_action(runner):
     runner.state["decision"] = decision("e3")
     runner.state["browser"].observe.side_effect = StalePage("changed")
