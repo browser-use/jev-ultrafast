@@ -161,11 +161,30 @@ def field_text(context):
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
-    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-    model = os.environ.get("TEXT_MODEL", "deepseek-chat")
+    base = os.environ.get("TEXT_MODEL_BASE_URL", "").rstrip("/")
+    model = os.environ.get("TEXT_MODEL", "").strip()
+    if not base:
+        # The DeepSeek fallbacks only make sense together. With TEXT_MODEL set but no endpoint,
+        # the old default sent the configured key to api.deepseek.com — and README.md tells you
+        # that key is an OpenRouter key, so it left for a vendor it does not belong to. Paired
+        # defaults are kept for an unconfigured DeepSeek setup; the ambiguous half-configured
+        # case now fails loudly, like the missing key above.
+        if model and model != "deepseek-chat":
+            raise ValueError(
+                "TEXT_MODEL is set but TEXT_MODEL_BASE_URL is not, so the key would be sent to the "
+                "default endpoint. Set TEXT_MODEL_BASE_URL to the endpoint that issued the key."
+            )
+        base = "https://api.deepseek.com/v1"
+    model = model or "deepseek-chat"
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    elif os.environ.get("TEXT_MODEL_REASONING", "").strip().lower() == "omit":
+        # Some OpenAI-compatible endpoints reject an unknown `reasoning` key outright: Fireworks
+        # ("Extra inputs are not permitted"), Groq ("property 'reasoning' is unsupported"), and
+        # Gemini's OpenAI-compatible shim ("Unknown name \"reasoning\""). For those, leave the
+        # field out entirely — `none` still sends the key, and 400s.
+        reasoning = {}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
