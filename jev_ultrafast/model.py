@@ -202,7 +202,8 @@ def rejected_parameter(error, control):
     param = detail.get("param")
     if param is not None and (not isinstance(param, str) or not re.fullmatch(path, param)):
         return False
-    if param is not None and detail.get("code") in {
+    code = detail.get("code")
+    if param is not None and isinstance(code, str) and code in {
         "unknown_parameter", "unsupported_parameter", "unsupported_value", "invalid_parameter", "invalid_value",
     }:
         return True
@@ -214,7 +215,7 @@ def rejected_parameter(error, control):
     # another parameter name or matching the suffix of an unrelated field.
     return bool(re.search(
         rf"\b(?:unknown|unrecognized|unrecognised|unexpected|unsupported|invalid)\s+(?:request\s+)?"
-        rf"(?:parameter|argument|field|key|value)(?:\s+supplied)?\s*:?\s*[`'\"]?(?<![\w.]){path}(?![\w.])"
+        rf"(?:parameter|argument|field|key|value)(?:\s+supplied)?\s*:?\s*[`'\"]?(?<![\w.]){path}(?!\w)(?!\.[a-z_])"
         rf"|(?<![\w.]){path}[`'\"]?\s+(?:is\s+)?(?:not supported|not allowed|not permitted|unsupported)\b",
         message,
         re.IGNORECASE,
@@ -234,6 +235,7 @@ def field_text(context):
     first = REASONING_CONTROLS.get(cache_key, 0)
     limits = token_limits()
     limit_index = TOKEN_LIMITS.get((url, model), 0)
+    tried = set()
     started = time.perf_counter()
     body = {
         "model": model,
@@ -258,9 +260,13 @@ def field_text(context):
             result = post_json(url, key, {**body, **limit, **control})
         except ModelHTTPError as error:
             # Each parameter negotiates on its own; a rejected cap never consumes a reasoning step.
-            if rejected_parameter(error, limit) and limit_index + 1 < len(limits):
-                limit_index += 1
-                continue
+            if rejected_parameter(error, limit):
+                # Start from the cached spelling, then try every other one exactly once.
+                tried.add(limit_index)
+                untried = [i for i in range(len(limits)) if i not in tried]
+                if untried:
+                    limit_index = untried[0]
+                    continue
             if rejected_parameter(error, control) and index + 1 < len(controls):
                 index += 1
                 continue

@@ -374,6 +374,27 @@ def test_message_naming_the_cap_negotiates_the_cap_not_reasoning(text_http):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("body,expected", [
+    # A provider may put a non-string in code, or name the field unquoted at the end of a
+    # sentence. Neither may crash, and the sentence period is not part of the field path.
+    ({"error": {"param": "reasoning", "code": ["unknown_parameter"]}}, False),
+    ({"error": {"param": "reasoning", "code": {"kind": "unknown_parameter"}}}, False),
+    ({"error": {"message": "Unknown parameter: reasoning.", "param": None, "code": None}}, True),
+    ({"error": {"message": "Unknown parameter: reasoning_content.", "param": None, "code": None}}, False),
+])
+def test_malformed_or_unquoted_rejections(text_http, body, expected):
+    calls, replies = text_http
+    replies.append((400, body))
+    if expected:
+        replies.append(text_reply())
+        assert model.field_text({})[0] == "Zurich"
+        assert len(calls) == 2
+    else:
+        with pytest.raises(model.ModelHTTPError):
+            model.field_text({})
+        assert len(calls) == 1
+
+
 def test_output_cap_negotiates_independently_of_reasoning(text_http):
     # PIN: gpt-5.6-luna rejects max_tokens and requires max_completion_tokens, observed live
     # 2026-09-18; the cap must negotiate without spending a reasoning fallback step.
@@ -386,13 +407,39 @@ def test_output_cap_negotiates_independently_of_reasoning(text_http):
     assert calls[0][1]["max_tokens"] == 1024
 
 
-def test_accepted_cap_is_cached_per_endpoint_and_model(text_http):
+def test_accepted_cap_is_reused_within_an_endpoint_and_model(text_http):
     calls, replies = text_http
     replies.extend([rejection("max_tokens"), text_reply(), text_reply()])
     model.field_text({})
     model.field_text({})
     assert len(calls) == 3
     assert "max_tokens" not in calls[-1][1] and calls[-1][1]["max_completion_tokens"] == 1024
+
+
+@pytest.mark.parametrize("name,value", [
+    ("TEXT_MODEL", "other-model"),
+    ("TEXT_MODEL_BASE_URL", "https://gateway.test/other/v1"),
+])
+def test_cap_cache_isolated_by_configuration(text_http, monkeypatch, name, value):
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply(), rejection("max_tokens"), text_reply()])
+    model.field_text({})
+    monkeypatch.setenv(name, value)
+    model.field_text({})
+    assert len(calls) == 4
+    assert "max_tokens" in calls[2][1], "a different endpoint or model must start from the first spelling"
+
+
+def test_cached_cap_falls_back_when_it_starts_being_rejected(text_http):
+    # The accepted spelling can stop working (gateway swap, model alias moved); the other
+    # spelling must still be tried before the error propagates.
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply(),
+                    rejection("max_completion_tokens"), text_reply()])
+    model.field_text({})
+    value, info = model.field_text({})
+    assert value == "Zurich" and info["token_limit"] == "max_tokens"
+    assert [("max_completion_tokens" in body) for _, body in calls] == [False, True, True, False]
 
 
 def test_both_cap_spellings_rejected_propagates(text_http):
