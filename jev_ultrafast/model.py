@@ -3,13 +3,26 @@
 import json
 import math
 import os
+import re
 import time
+import warnings
 
 import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
 CLIENT = httpx.Client(http2=True, timeout=25)
+REASONING_CONTROLS = {}
+
+
+class ModelHTTPError(RuntimeError):
+    def __init__(self, response):
+        super().__init__(f"Model provider returned HTTP {response.status_code}; no action executed.")
+        self.status = response.status_code
+        try:
+            self.body = response.json()
+        except ValueError:
+            self.body = None
 
 
 def post_json(url, key, body):
@@ -22,7 +35,7 @@ def post_json(url, key, body):
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
-            raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
+            raise ModelHTTPError(response)
         return response.json()
     raise RuntimeError("Model unavailable")
 
@@ -157,33 +170,88 @@ def field_context(goal, action, page, history):
     }
 
 
+def reasoning_controls(setting):
+    """Try equivalent controls individually, then let the provider use its defaults."""
+    if setting not in (None, "none", "low", "medium", "high"):
+        raise ValueError("TEXT_MODEL_REASONING must be none, low, medium, or high")
+    if setting == "none":
+        return [
+            {"reasoning": {"enabled": False}},
+            {"reasoning_effort": "none"},
+            {"thinking": {"type": "disabled"}},
+            {},
+        ]
+    return [{"reasoning": {"effort": setting or "low"}}, {"reasoning_effort": setting or "low"}, {}]
+
+
+def rejected_reasoning(error, control):
+    """Only negotiate explicit validation rejections of the control currently sent."""
+    if error.status not in {400, 422} or not control or not isinstance(error.body, dict):
+        return False
+    detail = error.body.get("error")
+    if not isinstance(detail, dict):
+        return False
+    field = next(iter(control))
+    path = rf"{field}(?:\.[a-z_]+)*"
+    param = detail.get("param")
+    if param is not None and (not isinstance(param, str) or not re.fullmatch(path, param)):
+        return False
+    if param is not None and detail.get("code") in {
+        "unknown_parameter", "unsupported_parameter", "unsupported_value", "invalid_parameter", "invalid_value",
+    }:
+        return True
+    message = detail.get("message")
+    if not isinstance(message, str):
+        return False
+    # A mere mention (e.g. "max_tokens is too small for reasoning") is not a rejection.
+    # OpenAI says "Unrecognized request argument supplied: reasoning_effort", so tolerate a
+    # couple of filler words on either side of the noun without losing the field anchor.
+    return bool(re.search(
+        rf"\b(?:unknown|unrecognized|unrecognised|unexpected|unsupported|invalid)\s+(?:\w+\s+){{0,2}}"
+        rf"(?:parameter|argument|field|key|value)(?:\s+\w+){{0,2}}\s*:?\s*[`'\"]?{path}(?![\w.])"
+        rf"|(?<![\w.]){path}[`'\"]?\s+(?:is\s+)?(?:not supported|not allowed|not permitted|unsupported)\b",
+        message,
+        re.IGNORECASE,
+    ))
+
+
 def field_text(context):
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    setting = os.environ.get("TEXT_MODEL_REASONING")
+    controls = reasoning_controls(setting)
+    url = base + "/chat/completions"
+    cache_key = (url, model, setting)
+    first = REASONING_CONTROLS.get(cache_key, 0)
     started = time.perf_counter()
-    result = post_json(
-        base + "/chat/completions",
-        key,
-        {
-            "model": model,
-            "max_tokens": 1024,
-            "response_format": {"type": "json_object"},
-            **reasoning,
-            "messages": [
-                {"role": "system", "content": TEXT_VALUE},
-                {
-                    "role": "user",
-                    "content": json.dumps(context),
-                },
-            ],
-        },
-    )
+    body = {
+        "model": model,
+        "max_tokens": 1024,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": TEXT_VALUE},
+            {"role": "user", "content": json.dumps(context)},
+        ],
+    }
+    for index in range(first, len(controls)):
+        control = controls[index]
+        if not control:
+            warnings.warn(
+                f"Text helper could not enforce reasoning={setting or 'low'}; "
+                "omitting the control. Provider defaults apply and reasoning may be enabled.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        try:
+            result = post_json(url, key, {**body, **control})
+        except ModelHTTPError as error:
+            if not rejected_reasoning(error, control):
+                raise
+        else:
+            break
     try:
         output = json.loads(result["choices"][0]["message"]["content"])
         value = output["text"]
@@ -191,8 +259,11 @@ def field_text(context):
             raise ValueError()
     except (ValueError, KeyError, TypeError):
         raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+    REASONING_CONTROLS[cache_key] = index
     return value, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),
         "usage": result.get("usage", {}),
+        "reasoning_attempts": index - first + 1,
+        "reasoning_control": control,
     }
