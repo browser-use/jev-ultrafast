@@ -13,6 +13,7 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
 CLIENT = httpx.Client(http2=True, timeout=25)
 REASONING_CONTROLS = {}
+TOKEN_LIMITS = {}
 
 
 class ModelHTTPError(RuntimeError):
@@ -184,8 +185,13 @@ def reasoning_controls(setting):
     return [{"reasoning": {"effort": setting or "low"}}, {"reasoning_effort": setting or "low"}, {}]
 
 
-def rejected_reasoning(error, control):
-    """Only negotiate explicit validation rejections of the control currently sent."""
+def token_limits():
+    """The output cap is spelled differently across model generations; only the server knows."""
+    return [{"max_tokens": 1024}, {"max_completion_tokens": 1024}]
+
+
+def rejected_parameter(error, control):
+    """Only negotiate explicit validation rejections of the parameter currently sent."""
     if error.status not in {400, 422} or not control or not isinstance(error.body, dict):
         return False
     detail = error.body.get("error")
@@ -226,32 +232,40 @@ def field_text(context):
     url = base + "/chat/completions"
     cache_key = (url, model, setting)
     first = REASONING_CONTROLS.get(cache_key, 0)
+    limits = token_limits()
+    limit_index = TOKEN_LIMITS.get((url, model), 0)
     started = time.perf_counter()
     body = {
         "model": model,
-        "max_tokens": 1024,
         "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": TEXT_VALUE},
             {"role": "user", "content": json.dumps(context)},
         ],
     }
-    for index in range(first, len(controls)):
-        control = controls[index]
-        if not control:
+    index, warned = first, False
+    while True:
+        control, limit = controls[index], limits[limit_index]
+        if not control and not warned:
             warnings.warn(
                 f"Text helper could not enforce reasoning={setting or 'low'}; "
                 "omitting the control. Provider defaults apply and reasoning may be enabled.",
                 RuntimeWarning,
                 stacklevel=2,
             )
+            warned = True
         try:
-            result = post_json(url, key, {**body, **control})
+            result = post_json(url, key, {**body, **limit, **control})
         except ModelHTTPError as error:
-            if not rejected_reasoning(error, control):
-                raise
-        else:
-            break
+            # Each parameter negotiates on its own; a rejected cap never consumes a reasoning step.
+            if rejected_parameter(error, limit) and limit_index + 1 < len(limits):
+                limit_index += 1
+                continue
+            if rejected_parameter(error, control) and index + 1 < len(controls):
+                index += 1
+                continue
+            raise
+        break
     try:
         output = json.loads(result["choices"][0]["message"]["content"])
         value = output["text"]
@@ -260,10 +274,12 @@ def field_text(context):
     except (ValueError, KeyError, TypeError):
         raise ValueError("Text helper returned no valid field value; nothing typed.") from None
     REASONING_CONTROLS[cache_key] = index
+    TOKEN_LIMITS[(url, model)] = limit_index
     return value, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),
         "usage": result.get("usage", {}),
         "reasoning_attempts": index - first + 1,
         "reasoning_control": control,
+        "token_limit": next(iter(limit)),
     }

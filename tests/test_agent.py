@@ -165,6 +165,7 @@ def text_http(monkeypatch):
     monkeypatch.setenv("TEXT_MODEL", "test-model")
     monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
     monkeypatch.setattr(model, "REASONING_CONTROLS", {})
+    monkeypatch.setattr(model, "TOKEN_LIMITS", {})
     monkeypatch.setattr(model.time, "sleep", lambda _: None)
     calls = []
     replies = []
@@ -277,7 +278,6 @@ def test_request_argument_rejections_reach_omission_and_cache_it(text_http):
 
 
 @pytest.mark.parametrize("message", [
-    "Invalid parameter max_tokens for reasoning",
     "Unknown parameter nonreasoning",
     "Unrecognized request argument supplied: nonreasoning",
     "Unrecognized request argument supplied: reasoning_effort",
@@ -352,12 +352,56 @@ def test_cached_control_can_be_rejected_later(text_http):
 
 def test_omission_failure_propagates(text_http):
     calls, replies = text_http
-    replies.extend(rejection(field) for field in ("reasoning", "reasoning_effort", "thinking", "max_tokens"))
+    replies.extend(rejection(field) for field in ("reasoning", "reasoning_effort", "thinking", "temperature"))
     with pytest.warns(RuntimeWarning, match="omitting the control"):
         with pytest.raises(model.ModelHTTPError):
             model.field_text({})
     assert len(calls) == 4
     assert not model.REASONING_CONTROLS
+
+
+def test_message_naming_the_cap_negotiates_the_cap_not_reasoning(text_http):
+    # "Invalid parameter max_tokens for reasoning" names the cap, so the cap is what moves;
+    # the reasoning control must survive untouched.
+    calls, replies = text_http
+    replies.extend([
+        (400, {"error": {"message": "Invalid parameter max_tokens for reasoning", "param": None, "code": None}}),
+        text_reply(),
+    ])
+    value, info = model.field_text({})
+    assert value == "Zurich" and info["token_limit"] == "max_completion_tokens"
+    assert info["reasoning_attempts"] == 1 and info["reasoning_control"] == {"reasoning": {"enabled": False}}
+    assert len(calls) == 2
+
+
+def test_output_cap_negotiates_independently_of_reasoning(text_http):
+    # PIN: gpt-5.6-luna rejects max_tokens and requires max_completion_tokens, observed live
+    # 2026-09-18; the cap must negotiate without spending a reasoning fallback step.
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply()])
+    value, info = model.field_text({})
+    assert value == "Zurich" and info["token_limit"] == "max_completion_tokens"
+    assert info["reasoning_attempts"] == 1 and info["reasoning_control"] == {"reasoning": {"enabled": False}}
+    assert "max_tokens" not in calls[-1][1] and calls[-1][1]["max_completion_tokens"] == 1024
+    assert calls[0][1]["max_tokens"] == 1024
+
+
+def test_accepted_cap_is_cached_per_endpoint_and_model(text_http):
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply(), text_reply()])
+    model.field_text({})
+    model.field_text({})
+    assert len(calls) == 3
+    assert "max_tokens" not in calls[-1][1] and calls[-1][1]["max_completion_tokens"] == 1024
+
+
+def test_both_cap_spellings_rejected_propagates(text_http):
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), rejection("max_completion_tokens")])
+    with pytest.raises(model.ModelHTTPError):
+        model.field_text({})
+    assert len(calls) == 2
+    assert not model.TOKEN_LIMITS and not model.REASONING_CONTROLS
 
 
 def test_invalid_json_output_does_not_negotiate_or_cache(text_http):
