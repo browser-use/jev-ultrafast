@@ -302,6 +302,47 @@ def test_flight_verification_rejects_wrong_trip(changed):
     assert not verify(actual)["passed"]
 
 
+MDN_PATH = [
+    "https://developer.mozilla.org/en-US/docs/Web/HTML",
+    "https://developer.mozilla.org/en-US/docs/Web/CSS",
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+]
+
+
+def test_mdn_verification_accepts_the_ordered_topics():
+    from examples.mdn import verify
+
+    visited = [
+        "https://developer.mozilla.org/en-US/docs/Web",
+        *MDN_PATH,
+        "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide",
+    ]
+    assert verify({"url": MDN_PATH[-1]}, visited)["passed"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing_topic", "wrong_order", "wrong_final", "never_started", "skipped_ahead"],
+)
+def test_mdn_verification_rejects_wrong_waypoints(mutation):
+    from examples.mdn import verify
+
+    visited = ["https://developer.mozilla.org/en-US/docs/Web", *MDN_PATH]
+    url = MDN_PATH[-1]
+    if mutation == "missing_topic":
+        visited = visited[:2]  # CSS and JavaScript were never reached.
+    elif mutation == "wrong_order":
+        visited = [visited[0], visited[2], visited[1]]  # JavaScript before CSS.
+    elif mutation == "wrong_final":
+        url = "https://developer.mozilla.org/en-US/docs/Web/CSS"
+    elif mutation == "never_started":
+        visited = ["https://developer.mozilla.org/en-US/docs/Web/HTML/Element"]
+    else:
+        # Every topic URL appears once (e.g. in a sidebar), but the run jumped straight there.
+        visited = ["https://developer.mozilla.org/en-US/docs/Web/HTML/CSS"]
+    assert not verify({"url": url}, visited)["passed"]
+
+
 @pytest.mark.parametrize(
     "content", ["Thinking: Zurich", '{"text":null}', '{"text":"Zurich","extra":true}', '{"text":123}']
 )
