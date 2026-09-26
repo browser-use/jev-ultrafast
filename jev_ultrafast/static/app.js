@@ -132,7 +132,7 @@ function render() {
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
-  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
+  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s · ${state.cost.jev_calls} decision + ${state.cost.text_calls} text calls · ${state.cost.input_tokens.toLocaleString()} jev in tok · $${state.cost.usd.toFixed(4)}`;
   $("model-state").textContent = JSON.stringify(
     d?.request || {
       goal: state.goal,

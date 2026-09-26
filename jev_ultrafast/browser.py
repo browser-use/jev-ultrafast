@@ -10,7 +10,7 @@ from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
+READ_STATE = Path(__file__).with_name("snapshot.js").read_text(encoding="utf-8")
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
 
 class StalePage(ValueError):
@@ -190,5 +190,9 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
-        info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        # The tab was created with background=True, and a background tab never produces a frame,
+        # so captureScreenshot waits forever for one. Surfacing it measures 41ms vs 5849ms for the
+        # captureBeyondViewport=False workaround (and vs a guaranteed timeout otherwise).
+        call("Page.bringToFront")
+        info["screenshot"] = call("Page.captureScreenshot", _response_timeout=30, format="jpeg", quality=72)["data"]
     return info

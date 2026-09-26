@@ -8,3 +8,7 @@ artifacts/
 *.egg-info/
 
 dist/
+
+# The debug launcher keeps a Chromium user-data dir (cookies, cache) beside itself.
+.edge-profile/
+_edge_demo.log

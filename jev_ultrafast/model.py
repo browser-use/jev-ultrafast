@@ -13,13 +13,15 @@ CLIENT = httpx.Client(http2=True, timeout=25)
 
 
 def post_json(url, key, body):
-    for attempt in range(3):
+    # Free-tier providers throttle in multi-second windows (measured: 1-2 HTTP 429 per 10 calls on
+    # api-inference.modelscope.cn), so the backoff has to outlast the window, not just the burst.
+    for attempt in range(4):
         try:
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
         except httpx.HTTPError:
             raise RuntimeError("Model connection failed; no action executed.") from None
-        if response.status_code in {429, 529, 503} and attempt < 2:
-            time.sleep(0.5 * 2**attempt)
+        if response.status_code in {429, 529, 503} and attempt < 3:
+            time.sleep(1.5 * 2**attempt)
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
@@ -179,7 +181,8 @@ def field_text(context):
                 {"role": "system", "content": TEXT_VALUE},
                 {
                     "role": "user",
-                    "content": json.dumps(context),
+                    # \uXXXX-escaped CJK makes helper models corrupt characters.
+                    "content": json.dumps(context, ensure_ascii=False),
                 },
             ],
         },
@@ -190,7 +193,12 @@ def field_text(context):
         if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
             raise ValueError()
     except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+        # This shape has been seen in the wild without reproducing under a hand-made fixture, so the
+        # model's own reply travels with the error instead of guessing at a repair.
+        content = result.get("choices", [{}])[0].get("message", {}).get("content")
+        raise ValueError(
+            f"Text helper returned no valid field value; nothing typed. Reply was {str(content)[:200]!r}"
+        ) from None
     return value, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),

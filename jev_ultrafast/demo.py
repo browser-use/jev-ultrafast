@@ -23,15 +23,42 @@ AGENT = None
 def load_environment():
     path = Path.cwd() / ".env"
     if path.exists():
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8").splitlines():
             if "=" in line and not line.startswith("#"):
                 key, value = line.split("=", 1)
-                os.environ.setdefault(key, value)
+                os.environ.setdefault(key.strip(), value.strip())
+
+
+PRICE_PER_MILLION_INPUT_TOKENS = 0.042  # docs.typesafe.ai: $42 per billion input tokens, output free
+
+
+def cost_of(state):
+    decisions = state.get("decisions", [])
+    text_calls = state.get("text_calls", [])
+    tokens_in = sum(d.get("usage", {}).get("input_tokens", 0) for d in decisions)
+    text_in = sum(t.get("usage", {}).get("prompt_tokens", 0) for t in text_calls)
+    return {
+        "calls": len(decisions) + len(text_calls),
+        "jev_calls": len(decisions),
+        "input_tokens": tokens_in,
+        "output_tokens": sum(d.get("usage", {}).get("output_tokens", 0) for d in decisions),
+        "usd": tokens_in / 1e6 * PRICE_PER_MILLION_INPUT_TOKENS,
+        # The text helper is an OpenAI-compatible endpoint billed elsewhere, so it reports
+        # prompt_tokens/completion_tokens and stays out of the TypeSafe figure above.
+        "text_calls": len(text_calls),
+        "text_input_tokens": text_in,
+        "text_output_tokens": sum(t.get("usage", {}).get("completion_tokens", 0) for t in text_calls),
+    }
 
 
 def response_state():
     state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
+    return {
+        **state,
+        "cost": cost_of(state),
+        "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"),
+        "max_steps": MAX_STEPS,
+    }
 
 
 def close_browser():
@@ -98,7 +125,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in files:
             return self.send(404, "Not found", "text/plain")
         name, mime = files[path]
-        content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
+        content = (ROOT / "static" / name).read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)
         self.send(200, content, mime + "; charset=utf-8")
 
     def do_POST(self):
