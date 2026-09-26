@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from jev_ultrafast import Agent
 
@@ -11,7 +12,7 @@ GOALS = (
     "Open the HTML topic, then its CSS topic link, then its JavaScript topic link. "
     "Stop on JavaScript. Only click public documentation links; do not type or submit anything."
 )
-# Each waypoint is verified from observed URLs, not from the model's DONE choice.
+# Each waypoint is a topic page itself, not a descendant such as /Web/HTML/Element.
 PATH = (
     "https://developer.mozilla.org/en-US/docs/Web/HTML",
     "https://developer.mozilla.org/en-US/docs/Web/CSS",
@@ -19,19 +20,24 @@ PATH = (
 )
 
 
+def topic_page(url):
+    """Normalize an observed URL to scheme, host and path without query or fragment."""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}".rstrip("/")
+
+
 def verify(page, visited):
     """Independent checks on observed URLs, not the model's DONE answer."""
     first_seen = {}
-    for index, url in enumerate(visited):
-        for topic in PATH:
-            if topic in url and topic not in first_seen:
-                first_seen[topic] = index
+    for index, url in enumerate(topic_page(url) for url in visited):
+        if url in PATH and url not in first_seen:
+            first_seen[url] = index
     checks = {
         "each_topic_was_visited": all(topic in first_seen for topic in PATH),
         "topics_were_visited_in_order": all(
             first_seen.get(a, 10**9) < first_seen.get(b, -1) for a, b in zip(PATH, PATH[1:])
         ),
-        "final_page": page["url"].startswith(PATH[-1]),
+        "final_page": topic_page(page["url"]) == PATH[-1],
     }
     return {"passed": all(checks.values()), "checks": checks}
 
