@@ -75,14 +75,16 @@ A zero-model-call replay drove the same scripted route and then ran the loop's o
 
 The rule now: a rejection raised before input is re-offered against the re-observation, and the model is asked again only when the action table has actually changed. One table can refuse the same control `MAX_STALE_REPLAY = 96` times -- above the worst measured streak of 85 -- after which that control leaves the table and the runner-up is offered, so a page that never settles ends through the no-progress cap instead of the call budget.
 
-Three further live runs, same goal and models, all seven independent checks passing:
+Three further live runs, same goal and models, all seven independent checks passing, measured on the same rulers as the table above:
 
-| Run | Steps | Predictions paid | Wall | Input tokens | Cost | The `Done` click | Paid calls inside it |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
-| `after 5` (before the rule) | 17 | 107 | 79.9 s | 1,276,151 | $0.0536 | 46.9 s of churn | 86 |
-| replay 1 | 35 | 49 | 46.1 s | 221,071 | $0.0093 | 1.8 s, one table | 1 |
-| replay 2 | 20 | 26 | 50.1 s | 143,545 | $0.0060 | 11.2 s, one table | 2 |
-| replay 3 | 30 | 41 | 62.3 s | 213,366 | $0.0090 | 12.0 s, one table | 2 |
+| Run | Steps | Predictions paid | Wall | Model | Browser | Input tokens | Cost | The `Done` click | Paid calls inside it |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| `after 5` (before the rule) | 17 | 107 | 79.9 s | 40.7 s | 39.2 s | 1,276,151 | $0.0536 | 46.9 s of churn | 86 |
+| replay 1 | 35 | 49 | 44.6 s | 21.1 s | 23.4 s | 221,071 | $0.0093 | 1.8 s, one table | 1 |
+| replay 2 | 20 | 26 | 49.0 s | 12.0 s | 37.0 s | 143,545 | $0.0060 | 11.2 s, one table | 2 |
+| replay 3 | 30 | 41 | 60.7 s | 19.0 s | 41.7 s | 213,366 | $0.0090 | 12.0 s, one table | 2 |
+
+Wall time did not improve and should not have: the page still churns, it just churns on the browser side of the split now, where it costs a re-read instead of a request.
 
 Two of the three hit the same date dialog and held one byte-identical table for 11-12 s of churn; each paid two calls and 27,259 tokens for it, where the earlier run paid 86 calls and 1,176,738. The longest run of consecutive predictions against a single action table was 86 before the rule (next worst: 12) and is 2-3 after it, and those few remaining repeats are executed actions that left the page unchanged -- the no-op rule's business, not this one's.
 
