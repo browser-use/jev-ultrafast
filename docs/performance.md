@@ -44,15 +44,18 @@ After the timed runs, native-select interruption handling was tightened: uncerta
 
 ## Overlay menus, 2026-09-27
 
-Three runs of `examples/flights.py`, identical goal (`October 18, 2026`), models, and settings. The first is the state before the hidden-page re-read and the `aria-expanded` rule; the other two have both. Wall time is the loop's own clock (first prediction after the initial observation to the accepted `DONE`/`BLOCKED`); model time is the sum of recorded decision latencies; browser time is the remainder, so it includes page rendering and navigation. `Input tokens` is the TypeSafe leg only -- the text helper bills separately and its usage keys do not add.
+Six runs of `examples/flights.py`, identical goal (`October 18, 2026`), models, and settings. The first is the state before the hidden-page re-read and the `aria-expanded` rule; the other five have both. Wall time is the loop's own clock (first prediction after the initial observation to the accepted `DONE`/`BLOCKED`); model time is the sum of recorded decision latencies; browser time is the remainder, so it includes page rendering and navigation. `Option row seen` counts that run's decision contexts whose elements contained the ticket menu's own `One way` row -- not the trigger's own label after it had been set to one way, which is a different string. `Input tokens` is the TypeSafe leg only: the text helper bills separately and its usage keys do not add.
 
-| Run | Verified | Steps | Decisions | Wall | Model | Browser | `ESCAPE` chosen | Input tokens |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| before | no, `blocked` | 55 | 61 | 35.0 s | 20.5 s | 14.5 s | 0 | 306,711 |
-| after 1 | 7/7 checks | 19 | 25 | 40.7 s | 9.0 s | 31.7 s | 1 | 157,509 |
-| after 2 | 7/7 checks | 29 | 36 | 53.3 s | 11.9 s | 41.4 s | 2 | 211,478 |
+| Run | Verified | Steps | Decisions | Option row seen | Wall | Model | Browser | `ESCAPE` chosen | Input tokens |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| before | no, `blocked` | 55 | 61 | 0 | 35.0 s | 20.5 s | 14.5 s | 0 | 306,711 |
+| after 1 | 7/7 | 19 | 25 | 7 | 40.7 s | 9.0 s | 31.7 s | 1 | 157,509 |
+| after 2 | 7/7 | 29 | 36 | 6 | 53.3 s | 11.9 s | 41.4 s | 2 | 211,478 |
+| after 3 | 7/7 | 15 | 23 | 6 | 16.2 s | 8.3 s | 7.9 s | 1 | 106,089 |
+| after 4 | 7/7 | 22 | 39 | 15 | 61.6 s | 22.3 s | 39.3 s | 1 | 294,533 |
+| after 5 | 7/7 | 17 | 107 | 89 | 79.9 s | 40.7 s | 39.2 s | 1 | 1,276,151 |
 
-That is $0.0129, $0.0066, and $0.0089 of the policy leg at $42 per billion input tokens. Two runs, one task: this is a before/after of a correctness regression and its fix, not a speed comparison, and the wall numbers are not paired against the 7.073 s recording above.
+That is $0.0045 to $0.0536 of the policy leg at $42 per billion input tokens. Five verified runs against one blocked run: this is a before/after of a correctness regression and its fix, not a speed comparison, and the wall numbers are not paired against the 7.073 s recording above. `after 5` is the cautionary one -- 17 executed steps bought with 107 predictions, 91 of which re-carried a fingerprint already predicted, so the page moved between predicting and acting and each rejection re-sent the whole table. Its cost is 12x the cheapest run's for the same seven verified checks.
 
 A zero-model-call probe (`0` decisions, `0` text calls) polled the raw reader every 0.2 s for 6 s after each input, to size the re-read budget rather than guess it:
 
@@ -62,7 +65,7 @@ A zero-model-call probe (`0` decisions, `0` text calls) polled the raw reader ev
 | Type a city (both fields) | none | 0.2 s |
 | Click Departure | none | 0.4 s |
 
-So `OVERLAY_SETTLE = 3.0` covers the one control that hides its page, and autocomplete and date-picker steps cannot be charged to it. The re-read is why `after 1` and `after 2` spend more of their wall time on the browser side than `before`: `before` was 41 clicks on a trigger whose options reached the model in 0 of its 61 decision contexts, which is fast only in the way a wrong answer is fast.
+So `OVERLAY_SETTLE = 3.0` covers the one control that hides its page, and autocomplete and date-picker steps cannot be charged to it. What the verified runs actually spend on the browser side ranges from 7.9 s to 41.4 s, and the bounded wait accounts for at most a few seconds of it: it can only fire on an input that leaves the page hidden, which on this site means the ticket-type menu. The rest is Google's own rendering plus discarded predictions -- the `after 5` row above is 90 rejected predictions re-sending the table, not 90 pieces of work.
 
 ## Development attempts retained
 
