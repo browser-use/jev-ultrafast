@@ -128,6 +128,8 @@ The same policy opened the requested Wikipedia article in **2.798 s** and passed
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
+Because the reader honours `aria-hidden`, a popup that hides the page behind it removes that page from the next snapshot: on Google Flights, opening the ticket-type menu marks 67 of 70 painted controls as hidden to assistive technology, so the following observation can legitimately contain nothing but the popup.
+
 Dropping no-op actions trades a fast stop for a longer exploration when the goal cannot be satisfied: the runner-up is not guaranteed to be useful, so an unsatisfiable task now spends more of the `MAX_STEPS` budget before the three-consecutive-no-change rule ends it.
 
 ## Development
