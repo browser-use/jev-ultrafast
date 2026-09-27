@@ -276,10 +276,23 @@ def test_fingerprint_tracks_values_and_identity_not_screenshots():
     assert fingerprint(p) != fingerprint(other)
 
 
+def test_example_target_date_is_still_bookable():
+    from datetime import date
+
+    from examples.flights import DAY
+
+    # The page renders no selectable cell for past dates, so a frozen default is a guaranteed miss.
+    assert DAY > date.today()
+
+
 @pytest.mark.parametrize("changed", ["Departure", "Where from?", "Where to?", "year"])
 def test_flight_verification_rejects_wrong_trip(changed):
+    from datetime import date
+
     from examples.flights import verify
 
+    # Pinned so the example's rolling default date can never make this fixture stale.
+    day = date(2026, 9, 20)
     actual = {
         "url": "https://www.google.com/travel/flights/search?tfs=example",
         "text": "Track prices from Zürich to London departing 2026-09-20",
@@ -294,12 +307,12 @@ def test_flight_verification_rejects_wrong_trip(changed):
             ]
         ],
     }
-    assert verify(actual)["passed"]
+    assert verify(actual, day)["passed"]
     if changed == "year":
         actual["text"] = actual["text"].replace("2026", "2027")
     else:
         next(a for a in actual["actions"] if a["label"] == changed)["value"] = "wrong"
-    assert not verify(actual)["passed"]
+    assert not verify(actual, day)["passed"]
 
 
 @pytest.mark.parametrize(

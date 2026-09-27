@@ -70,11 +70,13 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 ## Use the library
 
 ```python
+from datetime import date, timedelta
 from jev_ultrafast import Agent
 
+day = date.today() + timedelta(days=21)  # Google Flights only offers today and later
 with Agent(
     "https://www.google.com/travel/flights?hl=en",
-    "Find one-way flights from Zurich to London on September 20, 2026, "
+    f"Find one-way flights from Zurich to London on {day:%B} {day.day}, {day.year}, "
     "for one adult in economy. Stop when matching flight options are visible.",
 ) as agent:
     for state in agent.run():

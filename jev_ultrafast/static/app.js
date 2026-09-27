@@ -3,8 +3,14 @@ const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
   busy = false,
   automatic = false;
+// Google Flights renders no selectable cell for past dates, so the preset must roll forward.
+const flightDay = (() => {
+  const day = new Date();
+  day.setDate(day.getDate() + 21);
+  return day.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+})();
 const goals = {
-  flights: 'Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.',
+  flights: `Find one-way flights from Zurich to London on ${flightDay}, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.`,
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
@@ -233,6 +239,7 @@ $("download").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
 });
+$("goal").value = goals[$("scenario").value];
 fetch("/api/state")
   .then((r) => r.json())
   .then((s) => {
