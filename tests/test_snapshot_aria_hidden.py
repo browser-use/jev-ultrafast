@@ -118,6 +118,14 @@ def test_a_fully_hidden_page_still_yields_controls(hidden_page):
     _, state = hidden_page
     assert {"Departure city", "Arrival city"} <= labels(state), labels(state)
     assert "Zurich" in state["text"], "the fallback must bring the text back with the controls"
+    assert state["aria_hidden_fallback"] is True
+
+
+def test_the_fallback_stands_down_when_the_popup_itself_is_readable(pair):
+    """Honouring aria-hidden is still the normal answer: only an empty table re-reads."""
+    before, after = pair
+    assert before["aria_hidden_fallback"] is False
+    assert after["aria_hidden_fallback"] is False, labels(after)
 
 
 def test_inert_is_still_honoured_when_it_is_all_there_is(inert_page):

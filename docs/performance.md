@@ -42,6 +42,28 @@ These are separate smoke checks, not matched speed comparisons. Local browser ch
 
 After the timed runs, native-select interruption handling was tightened: uncertain mutation results stop instead of being treated as retryable stale reads. Flights does not exercise native SELECT. Its timing and recording hashes are retained unchanged; the final failure path is covered by offline fault injection and local browser checks.
 
+## Overlay menus, 2026-09-27
+
+Three runs of `examples/flights.py`, identical goal (`October 18, 2026`), models, and settings. The first is the state before the hidden-page re-read and the `aria-expanded` rule; the other two have both. Wall time is the loop's own clock (first prediction after the initial observation to the accepted `DONE`/`BLOCKED`); model time is the sum of recorded decision latencies; browser time is the remainder, so it includes page rendering and navigation. `Input tokens` is the TypeSafe leg only -- the text helper bills separately and its usage keys do not add.
+
+| Run | Verified | Steps | Decisions | Wall | Model | Browser | `ESCAPE` chosen | Input tokens |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| before | no, `blocked` | 55 | 61 | 35.0 s | 20.5 s | 14.5 s | 0 | 306,711 |
+| after 1 | 7/7 checks | 19 | 25 | 40.7 s | 9.0 s | 31.7 s | 1 | 157,509 |
+| after 2 | 7/7 checks | 29 | 36 | 53.3 s | 11.9 s | 41.4 s | 2 | 211,478 |
+
+That is $0.0129, $0.0066, and $0.0089 of the policy leg at $42 per billion input tokens. Two runs, one task: this is a before/after of a correctness regression and its fix, not a speed comparison, and the wall numbers are not paired against the 7.073 s recording above.
+
+A zero-model-call probe (`0` decisions, `0` text calls) polled the raw reader every 0.2 s for 6 s after each input, to size the re-read budget rather than guess it:
+
+| Input | Hidden-page window after the input | Menu's own row in the table |
+| --- | --- | --- |
+| Click ticket type | 0.6 s - 2.2 s | 2.4 s |
+| Type a city (both fields) | none | 0.2 s |
+| Click Departure | none | 0.4 s |
+
+So `OVERLAY_SETTLE = 3.0` covers the one control that hides its page, and autocomplete and date-picker steps cannot be charged to it. The re-read is why `after 1` and `after 2` spend more of their wall time on the browser side than `before`: `before` was 41 clicks on a trigger whose options reached the model in 0 of its 61 decision contexts, which is fast only in the way a wrong answer is fast.
+
 ## Development attempts retained
 
 Before freezing the candidate, the original runtime passed once in 9.302 s. Two accessibility-tree/semantic-guard candidates took 9.395 s and 10.157 s. The first direct-DOM candidate took 8.697 s but failed independent verification because name/value extraction was incomplete. Recursive labels and combobox values fixed that failure; subsequent verified diagnostics took 8.051, 8.631, 8.395, 8.385, and 7.741 s. A Mercury diagnostic passed in 7.559 s. These are changed-code development attempts, not the matched comparison above.

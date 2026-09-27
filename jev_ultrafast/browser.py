@@ -13,6 +13,11 @@ from browser_harness.helpers import cdp
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text(encoding="utf-8")
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
 
+# Sized by measurement: on Google Flights' ticket-type menu the hidden window opens 0.6 s after the
+# click, closes 2.2 s after it, and the menu's own option row is in the table 2.4 s after it. Typing a
+# city and opening the date picker never enter that state, so this budget is only ever spent on a menu.
+OVERLAY_SETTLE = 3.0
+
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
 
@@ -42,8 +47,12 @@ class Browser:
         return response.get("result", {}).get("value")
 
     def observe(self, screenshot=True):
-        if getattr(self, "after_input", None):
-            action, self.after_input = self.after_input, None
+        def read():
+            return browser_operation({"operation": "observe", "session": self.session, "screenshot": screenshot})
+
+        acted = getattr(self, "after_input", None)
+        if acted:
+            self.after_input = None
             # This is read-only and happens after execution was logged, even if navigation interrupts it.
             try:
                 self.call(
@@ -68,7 +77,7 @@ class Browser:
                         else requestAnimationFrame(ready);
                       };
                       requestAnimationFrame(ready);
-                    }))(""" + json.dumps(action) + ")",
+                    }))(""" + json.dumps(acted) + ")",
                     awaitPromise=True,
                     returnByValue=True,
                 )
@@ -76,14 +85,25 @@ class Browser:
                 pass
         for attempt in range(10):
             try:
-                return browser_operation(
-                    {"operation": "observe", "session": self.session, "screenshot": screenshot}
-                )
+                page = read()
+                break
             except StalePage:
                 if attempt == 9:
                     raise
                 time.sleep(0.02)
-        raise StalePage("Page did not settle")
+        else:
+            raise StalePage("Page did not settle")
+        if acted and page.get("aria_hidden_fallback"):
+            # The page is hidden while the thing the input opened is still being built, so this table is
+            # last frame's page. Re-reading is the only way to see what the overlay is about to offer.
+            deadline = time.monotonic() + OVERLAY_SETTLE
+            while page.get("aria_hidden_fallback") and time.monotonic() < deadline:
+                time.sleep(0.2)
+                try:
+                    page = read()
+                except StalePage:
+                    break
+        return page
 
     def fresh(self, page, action=None):
         if action is not None and action["kind"] in {"click", "select"}:

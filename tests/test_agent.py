@@ -168,6 +168,39 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
     assert d["choice"] == "e3"
 
 
+def test_an_expanded_control_is_visible_and_not_recommended_for_re_click(monkeypatch):
+    """Re-clicking the control that opened a menu closes it, so the policy has to see that it is open."""
+    p = page()
+    p["actions"].insert(0, {
+        "id": "menu", "kind": "click", "label": "Change ticket type", "node": 30,
+        "role": "combobox", "expanded": "true",
+    })
+    asked = []
+
+    def post(_url, _key, body):
+        asked.append(body["questions"])
+        questions = body["questions"]
+        return {
+            "model": "test",
+            "answers": {
+                "operation": choice(questions["operation"]["criteria"], "CLICK"),
+                "click_target": choice(questions["click_target"]["criteria"], "1"),
+            },
+        }
+
+    def rules(question):
+        rules = question["instructions"]["rules"]
+        return "\n".join(rules) if isinstance(rules, list) else rules
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    model.choose(p, "Choose one way", [])
+    questions = asked[0]
+    assert questions["click_target"]["criteria"]["1"]["expanded"] == "true"
+    for name, question in questions.items():
+        assert "expanded" in rules(question), f"{name} asks for a choice without the rule against re-clicking"
+
+
 def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
@@ -392,6 +425,42 @@ def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     with pytest.raises(StalePage):
         b.act(page()["actions"][0], page(), "book")
     operation.assert_not_called()
+
+
+def reader(monkeypatch, hidden):
+    """A Browser that never touches CDP, reading from a scripted list of observations."""
+    import jev_ultrafast.browser as browser
+
+    b = browser.Browser.__new__(browser.Browser)
+    b.session = "test"
+    b.call = Mock()
+    tables = [{"aria_hidden_fallback": value} for value in hidden]
+    reads = []
+    monkeypatch.setattr(browser, "browser_operation", lambda request: reads.append(request) or dict(tables.pop(0)))
+    return b, reads
+
+
+def test_a_hidden_page_after_an_input_is_read_again_until_the_overlay_lifts(monkeypatch):
+    b, reads = reader(monkeypatch, [True, True, False])
+    b.after_input = {"id": "e1", "kind": "click", "node": 1}
+    assert b.observe(screenshot=False)["aria_hidden_fallback"] is False
+    assert len(reads) == 3, "the stale table must not be what the agent acts on next"
+
+
+def test_a_cold_observation_never_waits_for_an_overlay(monkeypatch):
+    b, reads = reader(monkeypatch, [True, True, True, True, True])
+    assert b.observe(screenshot=False)["aria_hidden_fallback"] is True
+    assert len(reads) == 1, "nothing was just opened, so a hidden page is simply this page"
+
+
+def test_the_overlay_wait_is_bounded(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    monkeypatch.setattr(browser, "OVERLAY_SETTLE", 0.45)
+    b, reads = reader(monkeypatch, [True] * 40)
+    b.after_input = {"id": "e1", "kind": "click", "node": 1}
+    assert b.observe(screenshot=False)["aria_hidden_fallback"] is True
+    assert 2 <= len(reads) <= 6, len(reads)
 
 
 @pytest.mark.parametrize("response", [{"exceptionDetails": {}}, {"result": {}}])

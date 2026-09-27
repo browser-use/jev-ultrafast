@@ -6,6 +6,8 @@ Do not repeat satisfied steps. Fill required fields before submitting. A typed q
 its matching autocomplete suggestion selected. For date pickers, CLICK the field, date, then confirmation.
 Set every requested filter/control; a matching result alone does not prove a requested filter was set.
 Do not toggle a checkbox, switch, or radio already in the requested state.
+Never re-click a control the table reports as expanded: that closes it. Its options are arriving, so
+WAIT for them or choose among the options already listed.
 Submit populated search fields before opening a result; a populated field alone is not an applied search.
 WAIT only when the needed control is absent/disabled, or submitted results are still loading.
 PRESS ESCAPE only to close a menu or overlay that is hiding the controls you need.

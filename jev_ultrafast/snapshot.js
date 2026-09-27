@@ -113,5 +113,6 @@
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   actions.push({id:'escape',kind:'escape',label:'Press Escape to close the open menu or overlay'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
-    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
+    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions,
+    aria_hidden_fallback:ariaHiddenOk};
 })()
