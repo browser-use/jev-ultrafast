@@ -99,6 +99,7 @@ uv run --env-file .env python examples/run.py \
 - **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
+- **Give a no-op action its turn back.** An executed action that leaves the observed state unchanged is dropped from the next decision's targets, so the runner-up gets chosen instead of repeating into the no-progress stop. The exclusion is keyed to the action table's fingerprint, not the DOM freshness guard: ids are positional, so they are only carried across a re-observation while that table is identical.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
 - **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
 - **Send visible text.** Offscreen article bodies and footers do not fill the model context.
@@ -126,6 +127,8 @@ In six alternating runs with identical models and settings, both versions passed
 The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+
+Dropping no-op actions trades a fast stop for a longer exploration when the goal cannot be satisfied: the runner-up is not guaranteed to be useful, so an unsatisfiable task now spends more of the `MAX_STEPS` budget before the three-consecutive-no-change rule ends it.
 
 ## Development
 
