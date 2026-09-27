@@ -51,6 +51,17 @@ class Agent:
             "elements": action_space(self.state["page"]["actions"], self.state["no_progress"])[0],
         }
 
+    def refresh(self):
+        """Observe again, keeping the excluded ids only while the action table is byte-identical.
+
+        Skipped ids are positional into the observed actions, and the browser's freshness guard
+        churns on sites like Google Flights even when nothing the model can act on has changed.
+        """
+        previous = self.state["page"]["fingerprint"]
+        self.state["page"] = self.state["browser"].observe(screenshot=self.screenshots)
+        if self.state["page"]["fingerprint"] != previous:
+            self.state["no_progress"] = []
+
     def command(self, name, body=None):
         body = body or {}
         state = self.state
@@ -61,8 +72,7 @@ class Agent:
             except StalePage:
                 state["decision"] = None
                 state["status"] = "ready"
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
-                state["no_progress"] = []
+                self.refresh()
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
         elif name == "predict":
@@ -71,8 +81,7 @@ class Agent:
             if state["started_at"] is None:
                 state["started_at"] = time.perf_counter()
             if not state["browser"].fresh(state["page"]):
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
-                state["no_progress"] = []
+                self.refresh()
             state["decision"] = None
             if state["status"] in {"done", "blocked"}:
                 raise ValueError("This run has stopped. Start a fresh demo.")
@@ -160,6 +169,8 @@ class Agent:
             if last["page_changed"] or last["kind"] == "wait":
                 state["no_progress"] = []
             else:
+                # Keeping ids across this re-observation is safe only because fingerprint() hashes the
+                # action table: page_changed False means these positional ids still denote the same elements.
                 state["no_progress"] = [*state["no_progress"], last["choice"]]
             repeated = state["history"][-3:]
             state["status"] = (

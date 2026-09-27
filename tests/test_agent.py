@@ -243,13 +243,32 @@ def test_page_change_clears_the_exclusion_list(runner):
     assert runner.state["no_progress"] == []
 
 
-def test_tick_recovery_clears_ids_from_the_replaced_page(runner, monkeypatch):
+def test_tick_recovery_clears_ids_only_if_the_action_table_moved(runner, monkeypatch):
     monkeypatch.setattr(loop, "choose", lambda *a, **k: decision("e3"))
     runner.state["status"] = "ready"
     runner.state["no_progress"] = ["e1"]
     runner.state["browser"].act.side_effect = StalePage("Page moved during input")
+    changed = page()
+    changed["text"] = "Results"
+    changed["fingerprint"] = fingerprint(changed)
+    runner.state["browser"].observe.return_value = changed
     runner.command("tick")
     assert runner.state["no_progress"] == []
+
+
+@pytest.mark.parametrize("content", ["identical", "changed"])
+def test_predict_keeps_exclusions_across_a_guard_only_churn(runner, monkeypatch, content):
+    asked = []
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: asked.append(k["skip"]) or decision("e3"))
+    fresh = page()
+    if content == "changed":
+        fresh["text"] = "Results"
+        fresh["fingerprint"] = fingerprint(fresh)
+    runner.state["browser"].fresh.return_value = False  # The DOM guard churns even when the table does not.
+    runner.state["browser"].observe.return_value = fresh
+    runner.state["no_progress"] = ["e3"]
+    runner.command("predict", {})
+    assert asked == [["e3"] if content == "identical" else []]
 
 
 def test_skipping_one_dropdown_option_leaves_the_rest_selectable():
@@ -317,6 +336,9 @@ def test_fingerprint_tracks_values_and_identity_not_screenshots():
     other = deepcopy(p)
     other["screenshot"] = "changed"
     assert fingerprint(p) == fingerprint(other)
+    # The exclusion list survives a no-change re-observation, so ids must be inside the fingerprint.
+    other["actions"][0]["id"] = "zz"
+    assert fingerprint(p) != fingerprint(other)
     other["actions"][0]["node"] = 99
     assert fingerprint(p) != fingerprint(other)
 
