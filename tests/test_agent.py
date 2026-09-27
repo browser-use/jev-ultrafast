@@ -10,7 +10,7 @@ import pytest
 from jev_ultrafast import agent as loop
 from jev_ultrafast import model
 from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
-from jev_ultrafast.questions import MAX_NO_PROGRESS, MAX_STEPS
+from jev_ultrafast.questions import MAX_NO_PROGRESS, MAX_STALE_REPLAY, MAX_STEPS
 
 
 def page():
@@ -223,6 +223,7 @@ def runner():
     a = loop.Agent.__new__(loop.Agent)
     a.screenshots = False
     a.pending_text = None
+    a.pending_stale = None
     p = page()
     a.state = {
         "browser": Mock(fresh=Mock(return_value=True), observe=Mock(return_value=p)),
@@ -236,6 +237,7 @@ def runner():
         "record": False,
         "text_calls": [],
         "no_progress": [],
+        "stale_replays": 0,
     }
     return a
 
@@ -366,6 +368,52 @@ def test_tick_recovery_clears_ids_only_if_the_action_table_moved(runner, monkeyp
     runner.state["browser"].observe.return_value = changed
     runner.command("tick")
     assert runner.state["no_progress"] == []
+
+
+def test_a_rejected_click_on_an_unchanged_table_is_replayed_without_the_model(runner, monkeypatch):
+    asked = []
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: asked.append(1) or decision("e3"))
+    runner.state["status"] = "ready"
+    runner.state["browser"].act.side_effect = [StalePage("guard churned"), StalePage("again"), None]
+    runner.command("tick")
+    assert len(asked) == 1, "the action table is what the model saw, and it never moved"
+    assert runner.state["browser"].act.call_count == 3
+    assert [h["choice"] for h in runner.state["history"]] == ["e3"]
+    assert runner.state["stale_replays"] == 0, "a dispatched action closes the streak"
+
+
+def test_a_table_that_never_settles_loses_the_control_that_refused_it(runner, monkeypatch):
+    asked = []
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: asked.append(k["skip"]) or decision("e3"))
+    runner.state["status"] = "ready"
+    # MAX_STALE_REPLAY + 1 attempts: the last one is the rejection that spends the cap.
+    runner.state["browser"].act.side_effect = [StalePage("guard churned")] * (MAX_STALE_REPLAY + 1)
+    runner.command("tick")
+    assert asked == [[]], "the model is asked once, and nothing else during the streak"
+    assert len(runner.state["decisions"]) == 1, "no paid call is spent rediscovering the same answer"
+    assert runner.state["no_progress"] == ["e3"], "the control that refused is no longer offered"
+    assert runner.state["stale_replays"] == 0
+
+    runner.state["browser"].act.side_effect = [None]
+    runner.command("tick")
+    assert asked == [[], ["e3"]], "the next question is asked with the stuck control dropped"
+
+
+def test_a_moved_table_ends_the_replay_and_asks_the_model_again(runner, monkeypatch):
+    asked = []
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: asked.append(1) or decision("e3"))
+    runner.state["status"] = "ready"
+    moved = page()
+    moved["text"] = "Results"
+    moved["fingerprint"] = fingerprint(moved)
+    runner.state["browser"].observe.return_value = moved
+    runner.state["browser"].act.side_effect = [StalePage("table moved"), None]
+    runner.command("tick")
+    assert len(asked) == 1, "a new table is a new question, so the streak stops here"
+    assert runner.state["page"] is moved
+    runner.command("tick")
+    assert len(asked) == 2
+    assert runner.state["browser"].act.call_count == 2
 
 
 @pytest.mark.parametrize("content", ["identical", "changed"])

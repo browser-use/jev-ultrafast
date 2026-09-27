@@ -30,3 +30,8 @@ MAX_STEPS = 60
 # Dropping a no-op action hands its turn to the runner-up, which is not guaranteed to help, so an
 # unsatisfiable goal can keep wandering until MAX_STEPS. This is what bounds that exploration.
 MAX_NO_PROGRESS = MAX_STEPS // 5
+# Sized above the worst measured streak: Google Flights' date dialog refused the same click 85 times
+# on a byte-identical action table before the 86th attempt dispatched. A page that settles later than
+# this loses the control to the exclusion list instead of the call budget, and each new table
+# restarts the count, so this is a bound on one stuck control rather than on the whole episode.
+MAX_STALE_REPLAY = 96

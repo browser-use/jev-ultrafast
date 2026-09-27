@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .browser import Browser, StalePage
 from .model import action_space, choose, field_context, field_text
-from .questions import MAX_NO_PROGRESS, MAX_STEPS
+from .questions import MAX_NO_PROGRESS, MAX_STALE_REPLAY, MAX_STEPS
 
 
 class Agent:
@@ -16,6 +16,8 @@ class Agent:
             raise ValueError("Supply a task")
         plan = [task]
         self.pending_text = None
+        # The decision a pre-input rejection threw away, kept only to re-offer against an unchanged table.
+        self.pending_stale = None
         self.browser = Browser(url)
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
@@ -37,6 +39,8 @@ class Agent:
             text_calls=[],
             # Action ids that left this page unchanged; JSON-safe list because the panel serialises state.
             no_progress=[],
+            # Consecutive rejections of one byte-identical table, all on the same control.
+            stale_replays=0,
             elapsed_ms=0,
             started_at=None,
             record=bool(self.record_dir),
@@ -62,19 +66,48 @@ class Agent:
         if self.state["page"]["fingerprint"] != previous:
             self.state["no_progress"] = []
 
+    def after_stale(self):
+        """Re-observe after a rejection, and keep the answer when the table has not moved.
+
+        Every StalePage out of the act path is raised before input reaches the page, so re-offering a
+        decision cannot double-click. The table is what the model was shown, so when the re-observation
+        matches it byte for byte the next request is the same question: on Google Flights' date dialog
+        that cost 85 calls and 1.18M input tokens for the same answer, and one flipped answer 43 s later.
+        """
+        state = self.state
+        rejected, self.pending_stale = self.pending_stale, None
+        state["decision"] = None
+        previous = state["page"]["fingerprint"]
+        self.refresh()
+        if rejected is None or state["page"]["fingerprint"] != previous:
+            state["stale_replays"] = 0
+            return False
+        if state["stale_replays"] >= MAX_STALE_REPLAY:
+            # Nothing this table can offer has been accepted for the whole cap. Stop offering the control
+            # that refused, so the runner-up gets a turn and the no-progress cap can end a stuck episode.
+            state["no_progress"] = [*state["no_progress"], rejected["choice"]]
+            state["stale_replays"] = 0
+            return False
+        state["stale_replays"] += 1
+        state["decision"] = rejected
+        return True
+
     def command(self, name, body=None):
         body = body or {}
         state = self.state
         if name == "tick":
-            try:
-                self.command("predict", {})
-                return self.command("act", {"fingerprint": state["page"]["fingerprint"]})
-            except StalePage:
-                state["decision"] = None
-                state["status"] = "ready"
-                self.refresh()
-                state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
-                return self.snapshot()
+            # The cap lives in after_stale; this bound only guarantees a tick cannot spin if it is wrong.
+            for attempt in range(MAX_STALE_REPLAY + 2):
+                try:
+                    if attempt == 0:
+                        self.command("predict", {})
+                    return self.command("act", {"fingerprint": state["page"]["fingerprint"]})
+                except StalePage:
+                    state["status"] = "ready"
+                    if not self.after_stale():
+                        break
+            state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+            return self.snapshot()
         elif name == "predict":
             if not state["browser"]:
                 raise ValueError("Start a demo first")
@@ -83,6 +116,7 @@ class Agent:
             if not state["browser"].fresh(state["page"]):
                 self.refresh()
             state["decision"] = None
+            self.pending_stale = None
             if state["status"] in {"done", "blocked"}:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
@@ -104,11 +138,15 @@ class Agent:
                 raise ValueError("Observe and choose before acting")
             # Consume once, before any mutation or model call. A retry cannot double-click.
             state["decision"] = None
+            # StalePage from here on is raised before input reaches the page, so after_stale may re-offer
+            # this same decision against a byte-identical re-observation without risking a second click.
+            self.pending_stale = decision
             selected = decision["choice"]
             if selected in {"DONE", "BLOCKED"}:
                 if not state["browser"].fresh(page):
                     state["status"] = "ready"
                     raise StalePage("Page changed since the decision. Choose again.")
+                self.pending_stale = None
                 state["status"] = "done" if selected == "DONE" else "blocked"
                 state["plan_index"] = int(selected == "DONE")
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
@@ -131,6 +169,8 @@ class Agent:
             # Browser.act checks freshness immediately before input, including after text generation.
             state["browser"].act(action, page, text=text)
             self.pending_text = None
+            self.pending_stale = None
+            state["stale_replays"] = 0
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             # Record execution before observing. A stale post-action observation must not erase the action.
             state["history"].append(
