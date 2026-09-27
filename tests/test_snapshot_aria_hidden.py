@@ -70,6 +70,77 @@ def labels(state):
     return {a["label"] for a in state["actions"]}
 
 
+ALL_HIDDEN = """<!doctype html><title>Whole page hidden</title>
+<div id="app" aria-hidden="true">
+  <button aria-label="Departure city">Zurich</button>
+  <button aria-label="Arrival city">London</button>
+</div>
+"""
+
+ALL_INERT = """<!doctype html><title>Whole page inert</title>
+<div id="app" inert>
+  <button aria-label="Departure city">Zurich</button>
+</div>
+"""
+
+
+def opened(tmp_path_factory, name, html):
+    path = tmp_path_factory.mktemp(name) / "page.html"
+    path.write_text(html, encoding="utf-8")
+    browser = Browser(path.as_uri().replace("\\", "/"))
+    try:
+        return browser, browser.observe(screenshot=False)
+    except Exception:
+        browser.close()
+        raise
+
+
+@pytest.fixture(scope="module")
+def hidden_page(tmp_path_factory):
+    browser, state = opened(tmp_path_factory, "all_hidden", ALL_HIDDEN)
+    try:
+        yield browser, state
+    finally:
+        browser.close()
+
+
+@pytest.fixture(scope="module")
+def inert_page(tmp_path_factory):
+    browser, state = opened(tmp_path_factory, "all_inert", ALL_INERT)
+    try:
+        yield browser, state
+    finally:
+        browser.close()
+
+
+def test_a_fully_hidden_page_still_yields_controls(hidden_page):
+    """Nothing but aria-hidden is painted here, so the strict pass would report an empty page."""
+    _, state = hidden_page
+    assert {"Departure city", "Arrival city"} <= labels(state), labels(state)
+    assert "Zurich" in state["text"], "the fallback must bring the text back with the controls"
+
+
+def test_inert_is_still_honoured_when_it_is_all_there_is(inert_page):
+    """inert blocks input, so re-reading the subtree cannot make its controls addressable."""
+    _, state = inert_page
+    assert [a for a in state["actions"] if "node" in a] == [], "only the synthetic actions may remain"
+
+
+def test_a_revealed_control_is_actually_executable(hidden_page):
+    """A control the fallback offers but the executor refuses would be a trap, not a recovery."""
+    browser, state = hidden_page
+    action = next(a for a in state["actions"] if a["label"] == "Departure city")
+    assert browser.act(action, state) == {"executed": action["id"]}
+
+
+def test_escape_is_offered_once_and_owns_no_node(hidden_page):
+    """The only test here that reads the real reader, so the synthetic action belongs to it."""
+    _, state = hidden_page
+    escape = [a for a in state["actions"] if a["kind"] == "escape"]
+    assert [a["id"] for a in escape] == ["escape"], escape
+    assert "node" not in escape[0], "a key press must not be pinned to an element that can go stale"
+
+
 def test_controls_behind_the_popup_leave_the_table(pair):
     before, after = pair
     assert {"Departure city", "Change ticket type"} <= labels(before)

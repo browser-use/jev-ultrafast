@@ -7,7 +7,8 @@
   };
   for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
   const safe = e => !['password','file','hidden'].includes(e.type);
-  const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
+  let ariaHiddenOk=false;
+  const visible = e => (ariaHiddenOk || !e.closest('[aria-hidden="true"]')) && !e.closest('[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
   const name = (e,seen=new Set(),skipContent) => {
     if (!e || seen.has(e)) return '';
@@ -53,32 +54,38 @@
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
   const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
-    if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
-    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
-    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
-    if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
-    const base={node:identity(e),role:rname,label:name(e)||rname,
-      rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
-    for (const key of ['checked','selected','expanded']) {
-      const value=e.getAttribute('aria-'+key);
-      if (value!==null) base[key]=value;
-    }
-    if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
-    if (e.tagName==='SELECT') {
-      const selected=[...e.selectedOptions].map(o=>o.label).join(', ');
-      const control=name(e,new Set(),true)||(e.name||e.id||'dropdown')+' ('+(selected||'nothing selected')+')';
-      for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
-        actions.push({...base,kind:'select',value:o.value,current_value:selected,
-          label:control+' → '+o.label});
-    } else {
-      const editable=!e.readOnly && e.getAttribute('aria-readonly')!=='true' &&
-        (['textbox','searchbox','spinbutton'].includes(rname) ||
-          (rname==='combobox' && ['INPUT','TEXTAREA'].includes(e.tagName)));
-      const value='value' in e ? String(e.value) :
-        e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
-      actions.push({...base,kind:editable?'fill':'click',value});
-      if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
+  // A popup can mark the page behind it aria-hidden, which is a hint to assistive tech and does not
+  // block input. Reading that subtree is normally wrong, but reporting a painted page with no control
+  // at all is worse: the second pass only runs when the first leaves nothing to act on.
+  for (let pass=0; pass<2 && !actions.length; pass++) {
+    ariaHiddenOk=pass>0;
+    for (const e of document.querySelectorAll(selector)) {
+      if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+      const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
+      if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+      if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
+      const base={node:identity(e),role:rname,label:name(e)||rname,
+        rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+      for (const key of ['checked','selected','expanded']) {
+        const value=e.getAttribute('aria-'+key);
+        if (value!==null) base[key]=value;
+      }
+      if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
+      if (e.tagName==='SELECT') {
+        const selected=[...e.selectedOptions].map(o=>o.label).join(', ');
+        const control=name(e,new Set(),true)||(e.name||e.id||'dropdown')+' ('+(selected||'nothing selected')+')';
+        for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
+          actions.push({...base,kind:'select',value:o.value,current_value:selected,
+            label:control+' → '+o.label});
+      } else {
+        const editable=!e.readOnly && e.getAttribute('aria-readonly')!=='true' &&
+          (['textbox','searchbox','spinbutton'].includes(rname) ||
+            (rname==='combobox' && ['INPUT','TEXTAREA'].includes(e.tagName)));
+        const value='value' in e ? String(e.value) :
+          e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
+        actions.push({...base,kind:editable?'fill':'click',value});
+        if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
+      }
     }
   }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
@@ -104,6 +111,7 @@
   if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
+  actions.push({id:'escape',kind:'escape',label:'Press Escape to close the open menu or overlay'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
     scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
 })()

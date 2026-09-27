@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .browser import Browser, StalePage
 from .model import action_space, choose, field_context, field_text
-from .questions import MAX_STEPS
+from .questions import MAX_NO_PROGRESS, MAX_STEPS
 
 
 class Agent:
@@ -173,11 +173,14 @@ class Agent:
                 # action table: page_changed False means these positional ids still denote the same elements.
                 state["no_progress"] = [*state["no_progress"], last["choice"]]
             repeated = state["history"][-3:]
-            state["status"] = (
-                "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
-                else "ready"
+            consecutive = len(repeated) == 3 and all(
+                h["page_changed"] is False and h["kind"] != "wait" for h in repeated
             )
+            # Derived from history, so the panel and this rule cannot disagree about what was a no-op.
+            no_ops = sum(
+                1 for h in state["history"] if h["page_changed"] is False and h["kind"] != "wait"
+            )
+            state["status"] = "blocked" if consecutive or no_ops >= MAX_NO_PROGRESS else "ready"
         else:
             raise ValueError("Unknown command")
         return self.snapshot()

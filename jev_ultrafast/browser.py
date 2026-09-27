@@ -137,6 +137,10 @@ def browser_operation(request):
         kind = action["kind"]
         if kind == "scroll":
             call("Input.dispatchMouseEvent", type="mouseWheel", x=550, y=650, deltaX=0, deltaY=action["delta"])
+        elif kind == "escape":
+            # Not tied to an observed node: the point is to reach whatever the page keeps focused.
+            for event in ("keyDown", "keyUp"):
+                call("Input.dispatchKeyEvent", type=event, key="Escape", code="Escape", windowsVirtualKeyCode=27)
         elif kind != "wait":
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")

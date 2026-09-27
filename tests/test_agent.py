@@ -10,6 +10,7 @@ import pytest
 from jev_ultrafast import agent as loop
 from jev_ultrafast import model
 from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
+from jev_ultrafast.questions import MAX_NO_PROGRESS, MAX_STEPS
 
 
 def page():
@@ -72,6 +73,33 @@ def test_one_index_per_node_with_operation_specific_targets():
     assert targets["CLICK"]["1"]["id"] == "e2"
     assert targets["CLICK"]["2"]["id"] == "e3"
     assert "WAIT" in controls
+
+
+def escape_actions():
+    return page()["actions"] + [{"id": "escape", "kind": "escape", "label": "Press Escape"}]
+
+
+def test_escape_is_offered_without_a_target_head():
+    elements, targets, controls = model.action_space(escape_actions())
+    assert controls["ESCAPE"]["id"] == "escape"
+    assert "ESCAPE" not in targets
+    assert all(a["id"] != "escape" for head in targets.values() for a in head.values())
+    assert len(elements) == 2, "a key press is not an element"
+
+
+def test_escape_needs_no_target_answer_to_be_executable(monkeypatch):
+    def post(_url, _key, body):
+        return {
+            "model": "test",
+            "answers": {"operation": choice(body["questions"]["operation"]["criteria"], "ESCAPE")},
+        }
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    state = page()
+    state["actions"] = escape_actions()
+    d = model.choose(state, "Close the menu", [])
+    assert (d["operation"], d["choice"], d["target"]) == ("ESCAPE", "escape", None)
 
 
 def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
@@ -213,10 +241,12 @@ def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch
 
 
 def test_loading_waits_do_not_trigger_no_progress_stop(runner):
-    for _ in range(5):
+    for _ in range(MAX_NO_PROGRESS + 3):
         runner.state["decision"] = decision("wait")
         runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
-    assert len(runner.state["history"]) == 5 and runner.state["status"] == "ready"
+    assert len(runner.state["history"]) == MAX_NO_PROGRESS + 3
+    assert runner.state["status"] == "ready", "waiting on a loading page must not spend the no-op budget"
+    assert no_ops(runner.state["history"]) == 0, "a wait is not an action that went nowhere"
 
 
 def test_action_that_changed_nothing_is_not_offered_again(runner, monkeypatch):
@@ -241,6 +271,55 @@ def test_page_change_clears_the_exclusion_list(runner):
     runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     assert runner.state["history"][-1]["page_changed"] is True
     assert runner.state["no_progress"] == []
+
+
+def drip(runner, monkeypatch, rounds):
+    """Act repeatedly, alternating an observation that moved the page with one that did not.
+
+    No two no-ops land next to each other, so the three-in-a-row rule can never fire here; anything
+    that stops this run does it through the episode-wide budget.
+    """
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: decision("e3"))
+    runner.state["status"] = "ready"
+    seen = 0
+
+    def observe(**_kwargs):
+        nonlocal seen
+        seen += 1
+        current = runner.state["page"]
+        if seen % 2:
+            return current
+        moved = deepcopy(current)
+        moved["text"] = f"after {seen}"
+        moved["fingerprint"] = fingerprint(moved)
+        return moved
+
+    runner.state["browser"].observe.side_effect = observe
+    for _ in range(rounds):
+        if runner.state["status"] != "ready":
+            break
+        runner.state["decision"] = decision("e3")
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    return runner.state["history"]
+
+
+def no_ops(history):
+    return sum(1 for h in history if h["page_changed"] is False and h["kind"] != "wait")
+
+
+def test_no_ops_scattered_across_the_episode_still_stop_it(runner, monkeypatch):
+    history = drip(runner, monkeypatch, MAX_STEPS)
+    assert runner.state["status"] == "blocked"
+    assert no_ops(history) == MAX_NO_PROGRESS, "the budget is what ended this run"
+    window = [h["page_changed"] for h in history]
+    assert all(window[i : i + 3] != [False, False, False] for i in range(len(window) - 2))
+    assert len(history) < MAX_STEPS, len(history)
+
+
+def test_scattered_no_ops_below_the_budget_keep_running(runner, monkeypatch):
+    history = drip(runner, monkeypatch, (MAX_NO_PROGRESS - 1) * 2)
+    assert runner.state["status"] == "ready"
+    assert no_ops(history) == MAX_NO_PROGRESS - 1
 
 
 def test_tick_recovery_clears_ids_only_if_the_action_table_moved(runner, monkeypatch):
@@ -329,6 +408,20 @@ def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, r
             "id": "e1", "kind": "select", "node": 1, "value": "Design",
         }})
     assert cdp.call_count == 1
+
+
+def test_escape_sends_the_key_and_no_dom_evaluation(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    calls = []
+    monkeypatch.setattr(browser, "cdp", lambda *a, **k: calls.append((a, k)) or {})
+    result = browser_operation({
+        "operation": "act", "session": "test", "action": {"id": "escape", "kind": "escape"}
+    })
+    assert result == {"executed": "escape"}
+    assert [a[0] for a, _ in calls] == ["Input.dispatchKeyEvent"] * 2
+    assert [k["type"] for _, k in calls] == ["keyDown", "keyUp"]
+    assert all(k["key"] == "Escape" and k["code"] == "Escape" for _, k in calls), calls
 
 
 def test_fingerprint_tracks_values_and_identity_not_screenshots():

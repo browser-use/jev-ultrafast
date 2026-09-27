@@ -28,7 +28,7 @@ Every observation produces a new element table:
 ...
 ```
 
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
+The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `ESCAPE`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
 
 ```text
                       one TypeSafe request
@@ -100,6 +100,8 @@ uv run --env-file .env python examples/run.py \
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
 - **Give a no-op action its turn back.** An executed action that leaves the observed state unchanged is dropped from the next decision's targets, so the runner-up gets chosen instead of repeating into the no-progress stop. The exclusion is keyed to the action table's fingerprint, not the DOM freshness guard: ids are positional, so they are only carried across a re-observation while that table is identical.
+- **Bound the wandering that buys.** A run ends once `MAX_NO_PROGRESS` actions -- a fifth of `MAX_STEPS` -- have changed nothing, whether they arrive three in a row or scattered between actions that did. Waits are excluded: waiting on a loading page is not an action that went nowhere.
+- **Re-read a page that hid itself.** A popup can mark the page behind it `aria-hidden`, which is advice for assistive technology and does not block input. That advice is honoured, until honouring it would leave no control at all to act on; then the hidden subtree is read again, because an empty table is a worse report than a disagreeable one. `inert` is never re-read, because `inert` really does block input.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
 - **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
 - **Send visible text.** Offscreen article bodies and footers do not fill the model context.
@@ -126,11 +128,11 @@ In six alternating runs with identical models and settings, both versions passed
 
 The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, and nested scrolling remain outside this MVP, as does any keyboard input beyond the single `ESCAPE` key. Owned tabs share the existing Chrome profile.
 
-Because the reader honours `aria-hidden`, a popup that hides the page behind it removes that page from the next snapshot: on Google Flights, opening the ticket-type menu marks 67 of 70 painted controls as hidden to assistive technology, so the following observation can legitimately contain nothing but the popup.
+On Google Flights' ticket-type menu, raw DOM tallies taken immediately before and after each snapshot: while 90 of 91 painted controls sit under an `aria-hidden` ancestor, the observation still carries 29 addressable controls and 409 characters of text; once the menu's own options finish rendering, the re-read stands down and the snapshot holds exactly those 3. Before the re-read existed, that first moment had been measured as an observation with no addressable control in it at all, and `BLOCKED` was the policy's correct answer about it. The re-read can therefore surface the page behind an overlay, which is the point and the cost. `ESCAPE`, offered on every page, returned that menu's site to 29 controls and 390 characters of text in one press.
 
-Dropping no-op actions trades a fast stop for a longer exploration when the goal cannot be satisfied: the runner-up is not guaranteed to be useful, so an unsatisfiable task now spends more of the `MAX_STEPS` budget before the three-consecutive-no-change rule ends it.
+Dropping no-op actions trades a fast stop for a longer exploration when the goal cannot be satisfied: the runner-up is not guaranteed to be useful, so an unsatisfiable task spends up to `MAX_NO_PROGRESS` of its steps discovering that, instead of stopping at the first dead end.
 
 ## Development
 
