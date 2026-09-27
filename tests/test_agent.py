@@ -174,6 +174,7 @@ def runner():
         "started_at": time.perf_counter(),
         "record": False,
         "text_calls": [],
+        "no_progress": [],
     }
     return a
 
@@ -216,6 +217,50 @@ def test_loading_waits_do_not_trigger_no_progress_stop(runner):
         runner.state["decision"] = decision("wait")
         runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     assert len(runner.state["history"]) == 5 and runner.state["status"] == "ready"
+
+
+def test_action_that_changed_nothing_is_not_offered_again(runner, monkeypatch):
+    asked = []
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: asked.append(k["skip"]) or decision("e3"))
+    runner.state["decision"] = decision("e3")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["no_progress"] == ["e3"]
+    runner.command("predict", {})
+    assert asked == [["e3"]]
+    assert "e3" not in {a["id"] for a in model.action_space(page()["actions"], asked[0])[1]["CLICK"].values()}
+
+
+def test_page_change_clears_the_exclusion_list(runner):
+    runner.state["decision"] = decision("e3")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["no_progress"] == ["e3"]
+    runner.state["browser"].observe.return_value = changed = page()
+    changed["text"] = "Results"
+    changed["fingerprint"] = fingerprint(changed)
+    runner.state["decision"] = decision("e3")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["history"][-1]["page_changed"] is True
+    assert runner.state["no_progress"] == []
+
+
+def test_tick_recovery_clears_ids_from_the_replaced_page(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", lambda *a, **k: decision("e3"))
+    runner.state["status"] = "ready"
+    runner.state["no_progress"] = ["e1"]
+    runner.state["browser"].act.side_effect = StalePage("Page moved during input")
+    runner.command("tick")
+    assert runner.state["no_progress"] == []
+
+
+def test_skipping_one_dropdown_option_leaves_the_rest_selectable():
+    options = [
+        {"id": f"e{i}", "kind": "select", "node": 5, "role": "combobox", "value": str(n),
+         "current_value": "1 room", "label": f"Rooms (1 room) → {n} rooms"}
+        for i, n in enumerate((2, 3, 4), start=1)
+    ]
+    elements, targets, _ = model.action_space(options, skip=("e1",))
+    assert {a["id"] for a in targets["SELECT"].values()} == {"e2", "e3"}
+    assert targets["SELECT"].keys() == {o["index"] for o in elements[0]["options"]}
 
 
 def test_stale_observation_preserves_executed_action(runner):

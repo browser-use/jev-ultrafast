@@ -35,6 +35,8 @@ class Agent:
             plan_index=0,
             decisions=[],
             text_calls=[],
+            # Action ids that left this page unchanged; JSON-safe list because the panel serialises state.
+            no_progress=[],
             elapsed_ms=0,
             started_at=None,
             record=bool(self.record_dir),
@@ -46,7 +48,7 @@ class Agent:
     def snapshot(self):
         return {
             **{k: v for k, v in self.state.items() if k != "browser"},
-            "elements": action_space(self.state["page"]["actions"])[0],
+            "elements": action_space(self.state["page"]["actions"], self.state["no_progress"])[0],
         }
 
     def command(self, name, body=None):
@@ -60,6 +62,7 @@ class Agent:
                 state["decision"] = None
                 state["status"] = "ready"
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                state["no_progress"] = []
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
         elif name == "predict":
@@ -69,12 +72,15 @@ class Agent:
                 state["started_at"] = time.perf_counter()
             if not state["browser"].fresh(state["page"]):
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                state["no_progress"] = []
             state["decision"] = None
             if state["status"] in {"done", "blocked"}:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
-            state["decision"] = choose(state["page"], state["goal"], state["history"])
+            state["decision"] = choose(
+                state["page"], state["goal"], state["history"], skip=state["no_progress"]
+            )
             state["decisions"].append(
                 {
                     **state["decision"],
@@ -150,6 +156,11 @@ class Agent:
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )
+            last = state["history"][-1]
+            if last["page_changed"] or last["kind"] == "wait":
+                state["no_progress"] = []
+            else:
+                state["no_progress"] = [*state["no_progress"], last["choice"]]
             repeated = state["history"][-3:]
             state["status"] = (
                 "blocked"

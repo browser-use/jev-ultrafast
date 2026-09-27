@@ -47,12 +47,18 @@ def validate_choice(answer, ids):
     return answer
 
 
-def action_space(actions):
-    """One index per observed element; each operation has its own valid target choices."""
+def action_space(actions, skip=()):
+    """One index per observed element; each operation has its own valid target choices.
+
+    Skipped actions are dropped before the tables are built, so element numbering stays
+    consistent with the target indices the model is asked to choose from.
+    """
     elements, indices, targets, controls = [], {}, {}, {}
     operations = {"click": "CLICK", "fill": "TYPE_TEXT", "select": "SELECT"}
     for action in actions:
         kind = action["kind"]
+        if action["id"] in skip:
+            continue
         if kind not in operations:
             controls[action["id"].upper()] = action
             continue
@@ -80,8 +86,8 @@ def action_space(actions):
     return elements, targets, controls
 
 
-def choose(state, goal, history):
-    elements, targets, controls = action_space(state["actions"])
+def choose(state, goal, history, skip=()):
+    elements, targets, controls = action_space(state["actions"], skip)
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
         "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
