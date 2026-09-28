@@ -113,9 +113,10 @@ class Browser:
 
 
 def fingerprint(state):
-    # Geometry is re-read immediately before input. Animation must not look like a new page.
+    # Geometry is re-read immediately before input. Animation must not look like a new page,
+    # so neither element rects nor the document height count; the scroll position does.
     actions = [{k: v for k, v in action.items() if k != "rect"} for action in state["actions"]]
-    content = {"url": state["url"], "text": state["text"], "actions": actions, "scroll": state["scroll"]}
+    content = {"url": state["url"], "text": state["text"], "actions": actions, "scroll": state["scroll"]["y"]}
     return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
