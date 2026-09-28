@@ -25,6 +25,9 @@
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
   const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
     roles.map(role=>'[role="'+role+'"]').join(',');
+  // Native date and time fields take their value in this form and ignore typed text.
+  const formats={date:'YYYY-MM-DD','datetime-local':'YYYY-MM-DDTHH:MM',month:'YYYY-MM',
+    week:'YYYY-Www',time:'HH:MM'};
   const role = e => {
     const explicit=e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;
@@ -60,6 +63,7 @@
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+    if (e.tagName==='INPUT' && Object.hasOwn(formats,e.type)) base.format=formats[e.type];
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;

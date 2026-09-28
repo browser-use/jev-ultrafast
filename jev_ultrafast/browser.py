@@ -12,6 +12,17 @@ from browser_harness.helpers import cdp
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+# Native date and time fields drop inserted text. Set the value as their picker does, only once the
+# browser accepts the text in the field's form, so a rejected value leaves the field untouched.
+SET_NATIVE_VALUE = """(([action, text]) => {
+  const e=window.__jevFast?.nodes.get(action.node), probe=document.createElement('input');
+  probe.type=e.type; probe.value=text;
+  if (!probe.value) return null;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,probe.value);
+  e.dispatchEvent(new Event('input',{bubbles:true}));
+  e.dispatchEvent(new Event('change',{bubbles:true}));
+  return e.value;
+})"""
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -166,7 +177,10 @@ def browser_operation(request):
                 x, y = target["x"], target["y"]
                 for event in ("mousePressed", "mouseReleased"):
                     call("Input.dispatchMouseEvent", type=event, x=x, y=y, button="left", clickCount=1)
-                if kind == "fill":
+                if kind == "fill" and action.get("format"):
+                    if not evaluate(SET_NATIVE_VALUE + "(" + json.dumps([action, request["text"]]) + ")"):
+                        raise RuntimeError(f"The field takes {action['format']}; nothing was entered.")
+                elif kind == "fill":
                     call(
                         "Input.dispatchKeyEvent",
                         type="keyDown",

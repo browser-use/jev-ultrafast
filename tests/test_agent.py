@@ -151,6 +151,12 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
+def test_text_helper_is_told_the_value_form_of_a_date_field():
+    date = {**page()["actions"][0], "label": "Departure", "format": "YYYY-MM-DD"}
+    assert model.field_context("Fly on 28 September 2026", date, page(), [])["field"]["format"] == "YYYY-MM-DD"
+    assert "format" not in model.field_context("Search", page()["actions"][0], page(), [])["field"]
+
+
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
@@ -265,6 +271,36 @@ def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, r
             "id": "e1", "kind": "select", "node": 1, "value": "Design",
         }})
     assert cdp.call_count == 1
+
+
+@pytest.mark.parametrize(("accepted", "error"), [("2026-09-28", None), (None, "takes YYYY-MM-DD")])
+def test_date_field_value_is_set_not_typed(monkeypatch, accepted, error):
+    import jev_ultrafast.browser as browser
+
+    evaluations = []
+
+    def cdp(method, **params):
+        if method == "Runtime.evaluate":
+            evaluations.append(params["expression"])
+            value = {"x": 50, "y": 40} if len(evaluations) == 1 else accepted
+            return {"result": {"value": value}}
+        return {}
+
+    sent = []
+    monkeypatch.setattr(browser, "cdp", lambda method, **params: sent.append(method) or cdp(method, **params))
+    request = {
+        "operation": "act",
+        "session": "test",
+        "action": {"id": "e1", "kind": "fill", "node": 1, "format": "YYYY-MM-DD"},
+        "text": "2026-09-28",
+    }
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            browser_operation(request)
+    else:
+        assert browser_operation(request) == {"executed": "e1"}
+    assert evaluations[1].startswith(browser.SET_NATIVE_VALUE)
+    assert "Input.insertText" not in sent and "Input.dispatchKeyEvent" not in sent
 
 
 def test_fingerprint_tracks_values_and_identity_not_screenshots():
