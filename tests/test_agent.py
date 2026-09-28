@@ -475,16 +475,19 @@ def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     operation.assert_not_called()
 
 
-def reader(monkeypatch, hidden):
+def reader(monkeypatch, hidden, actions=None, fingerprints=None):
     """A Browser that never touches CDP, reading from a scripted list of observations."""
     import jev_ultrafast.browser as browser
 
     b = browser.Browser.__new__(browser.Browser)
     b.session = "test"
     b.call = Mock()
-    tables = [{"aria_hidden_fallback": value} for value in hidden]
+    rows = [{"aria_hidden_fallback": value} for value in hidden]
+    for i, row in enumerate(rows):
+        row["fingerprint"] = (fingerprints or ["fp"] * len(rows))[i]
+        row["actions"] = (actions or [[]] * len(rows))[i]
     reads = []
-    monkeypatch.setattr(browser, "browser_operation", lambda request: reads.append(request) or dict(tables.pop(0)))
+    monkeypatch.setattr(browser, "browser_operation", lambda request: reads.append(request) or dict(rows.pop(0)))
     return b, reads
 
 
@@ -508,6 +511,66 @@ def test_the_overlay_wait_is_bounded(monkeypatch):
     b, reads = reader(monkeypatch, [True] * 40)
     b.after_input = {"id": "e1", "kind": "click", "node": 1}
     assert b.observe(screenshot=False)["aria_hidden_fallback"] is True
+    assert 2 <= len(reads) <= 6, len(reads)
+
+
+OPEN = [{"id": "e1", "kind": "click", "label": "Ticket type", "expanded": "true"}]
+CLOSED = [{"id": "e1", "kind": "click", "label": "Ticket type"}]
+OFFERED = [{"id": "e1", "kind": "click", "label": "Ticket type"}, {"id": "e7", "kind": "click", "label": "One way"}]
+STILL_OPEN = [{**OPEN[0], "label": "Select your ticket type"}, OFFERED[1]]
+
+
+def test_a_click_that_leaves_its_own_control_expanded_is_read_until_the_table_moves(monkeypatch):
+    b, reads = reader(
+        monkeypatch,
+        [False, False, False],
+        actions=[OPEN, OPEN, OFFERED],
+        fingerprints=["fp", "fp", "moved"],
+    )
+    b.after_input = {"id": "e1", "kind": "click", "node": 1}
+    page = b.observe(screenshot=False)
+    assert len(reads) == 3, "an open control whose options have not arrived is last frame's page"
+    assert {a["id"] for a in page["actions"]} == {"e1", "e7"}, "the options must be what the model is asked about"
+
+
+def test_the_expanded_wait_only_answers_for_the_control_that_was_input(monkeypatch):
+    b, reads = reader(monkeypatch, [False, False], actions=[OPEN, OPEN], fingerprints=["fp", "fp"])
+    b.after_input = {"id": "e9", "kind": "click", "label": "something else", "node": 9}
+    assert len(b.observe(screenshot=False)["actions"]) == 1
+    assert len(reads) == 1, "a menu the agent did not just open is not this input's business"
+
+
+def test_a_table_that_moves_on_its_own_ends_the_expanded_wait(monkeypatch):
+    b, reads = reader(
+        monkeypatch,
+        [False, False, False, False],
+        actions=[OPEN, CLOSED, CLOSED, CLOSED],
+        fingerprints=["fp", "moved", "moved", "moved"],
+    )
+    b.after_input = {"id": "e1", "kind": "click", "node": 1}
+    assert b.observe(screenshot=False)["fingerprint"] == "moved"
+    assert len(reads) == 2, "the overlay offered what it was going to offer, so waiting further is cost"
+
+
+def test_options_that_arrive_while_the_control_stays_expanded_end_the_wait(monkeypatch):
+    b, reads = reader(
+        monkeypatch,
+        [False, False, False, False],
+        actions=[OPEN, STILL_OPEN, STILL_OPEN, STILL_OPEN],
+        fingerprints=["fp", "moved", "moved", "moved"],
+    )
+    b.after_input = {"id": "e1", "kind": "click", "node": 1}
+    assert b.observe(screenshot=False)["actions"] == STILL_OPEN
+    assert len(reads) == 2, "an autocomplete keeps its field expanded after the suggestions land"
+
+
+def test_the_expanded_wait_is_bounded(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    monkeypatch.setattr(browser, "OVERLAY_SETTLE", 0.45)
+    b, reads = reader(monkeypatch, [False] * 40, actions=[OPEN] * 40)
+    b.after_input = {"id": "e1", "kind": "click", "node": 1}
+    assert b.observe(screenshot=False)["aria_hidden_fallback"] is False
     assert 2 <= len(reads) <= 6, len(reads)
 
 

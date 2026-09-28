@@ -88,7 +88,45 @@ Wall time did not improve and should not have: the page still churns, it just ch
 
 Two of the three hit the same date dialog and held one byte-identical table for 11-12 s of churn; each paid two calls and 27,259 tokens for it, where the earlier run paid 86 calls and 1,176,738. The longest run of consecutive predictions against a single action table was 86 before the rule (next worst: 12) and is 2-3 after it, and those few remaining repeats are executed actions that left the page unchanged -- the no-op rule's business, not this one's.
 
-Two things this does not claim. A byte-identical table is the same *question*, not a provably identical *answer*: in the original trace the 86th question flipped to a different node, and that flip is what got executed, which is why spending the cap hands the control to the exclusion list rather than ending the run. And the wandering this exposed is unchanged -- the runs above still click the ticket-type trigger 22, 7 and 17 times, inside the 1-17 range of the five verified runs before the rule, because each of those clicks does change the page and so spends none of the no-progress budget.
+Two things this does not claim. A byte-identical table is the same *question*, not a provably identical *answer*: in the original trace the 86th question flipped to a different node, and that flip is what got executed, which is why spending the cap hands the control to the exclusion list rather than ending the run. And the wandering this exposed is unchanged -- the runs above still click the ticket-type trigger 22, 7 and 17 times, inside the 1-17 range of the five verified runs before the rule, because each of those clicks does change the page and so spends none of the no-progress budget. The next section is what resolved that one.
+
+## The menu that opens without hiding the page, 2026-09-28
+
+Yesterday's two defences both miss Google Flights' ticket-type menu. The instruction not to re-click an expanded control cannot help a table that has no options in it, and the re-read only fires when the whole page has gone dark. The saved traces say how often that state was paid for -- across the 407 predictions the nine 2026-09-27 runs paid, grouped by whether the trigger reported itself expanded and whether the menu's own option row sat in the same table:
+
+| Trigger | Option rows in that table | Paid predictions |
+| --- | --- | ---: |
+| closed | none | 314 |
+| closed | present | 17 |
+| expanded | none | 76 |
+| expanded | present | **0** |
+
+No prediction in any saved run ever saw the menu open *and* saw its options. A zero-model-call probe (two trials, the engine's own snapshot read every 0.2 s after one click) shows the order of events:
+
+| After the click | Addressable actions | `aria_hidden_fallback` | The trigger | Option rows |
+| --- | ---: | --- | --- | --- |
+| 0.1 s | 32 | false | in the table, `expanded=true` | none |
+| 2.4-2.5 s | 6 | false | gone from the table | Round trip / One way / Multi-city |
+
+The page is never hidden on the way, so a gate that asks only "did the page go dark" never opens. The loop is then asked about the 32-row table, where the only thing that has changed is the control that just reported itself expanded -- so the move on offer is to click it again, and that click closes the menu. 76 of 407 predictions were spent that way, and all 129 executed trigger clicks in those runs were made against a table with no option row in it.
+
+The rule now: the bounded post-input re-read also fires when the control that input opened reports itself expanded and the action table has not moved. A table that moves ends the wait, so an autocomplete that keeps its field expanded after its suggestions land pays no extra second, and the wait is still tied to an input -- a cold observation never waits.
+
+Measured the same morning, same goal, same models, both arms live. The `b` arm is the widened gate edited back to yesterday's shipped condition for the duration of the two runs and restored byte-exact afterwards (`sha256 2542c4fa` before and after):
+
+| Run | Steps | Paid | Wall | Model | Browser | Input tokens | Cost | Trigger clicks | Expanded-no-options predictions | `ESCAPE` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `b1` yesterday's gate | 22 | 28 | 48.9 s | 9.8 s | 39.0 s | 152,956 | $0.0064 | 11 | 6 | 1 |
+| `b2` yesterday's gate | 21 | 27 | 46.7 s | 10.0 s | 36.6 s | 148,261 | $0.0062 | 10 | 5 | 1 |
+| `w1` with the new gate | 14 | 21 | 14.6 s | 7.4 s | 7.2 s | 92,686 | $0.0039 | 1 | 0 | 0 |
+| `w2` | 14 | 23 | 14.6 s | 7.6 s | 7.0 s | 104,447 | $0.0044 | 1 | 0 | 0 |
+| `w3` | 13 | 19 | 14.3 s | 6.4 s | 7.9 s | 85,744 | $0.0036 | 1 | 0 | 0 |
+| `w4` | 12 | 21 | 15.1 s | 7.1 s | 8.0 s | 89,360 | $0.0038 | 1 | 0 | 0 |
+| `w5` | 11 | 19 | 12.0 s | 6.2 s | 5.9 s | 82,642 | $0.0035 | 1 | 0 | 0 |
+
+All seven independent route/date checks passed in every run of both arms, so the shorter run is not a shorter attempt. The saved seconds are browser-side: `b1` spends 39.0 s of its 48.9 s waiting on the page, and the new gate converts most of that into one bounded wait instead of ten round trips of click-render-reclick. `ESCAPE` stops being chosen because the state it was escaping from is no longer put in front of the model.
+
+Two things this does not claim. The control arm is two runs: the direction reproduces in five of five and the gap is larger than anything in the spread, but a two-run arm is a two-run arm. And the menu's options still only reach the table *after* the trigger has left it -- the grid above reads 0 for "expanded and options together" in the new runs as well, because on this site those two never coexist. What changed is that the loop no longer pays to sit in that moment and click through it; it is not that the moment became readable.
 
 ## Development attempts retained
 

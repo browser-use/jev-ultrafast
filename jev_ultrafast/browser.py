@@ -93,16 +93,23 @@ class Browser:
                 time.sleep(0.02)
         else:
             raise StalePage("Page did not settle")
-        if acted and page.get("aria_hidden_fallback"):
-            # The page is hidden while the thing the input opened is still being built, so this table is
-            # last frame's page. Re-reading is the only way to see what the overlay is about to offer.
-            deadline = time.monotonic() + OVERLAY_SETTLE
-            while page.get("aria_hidden_fallback") and time.monotonic() < deadline:
-                time.sleep(0.2)
-                try:
-                    page = read()
-                except StalePage:
-                    break
+        # Two ways this table is still last frame's page after an input: the whole page is hidden behind an
+        # overlay being built, or the control just opened reports itself expanded while its own options have
+        # not reached the table (Google Flights' ticket-type menu does this with the page left visible).
+        opened = acted["id"] if acted else None
+        first, deadline = page["fingerprint"], time.monotonic() + OVERLAY_SETTLE
+        while acted and time.monotonic() < deadline and (
+            page.get("aria_hidden_fallback")
+            or (
+                page["fingerprint"] == first
+                and any(a["id"] == opened and a.get("expanded") == "true" for a in page["actions"])
+            )
+        ):
+            time.sleep(0.2)
+            try:
+                page = read()
+            except StalePage:
+                break
         return page
 
     def fresh(self, page, action=None):
