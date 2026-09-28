@@ -4,7 +4,9 @@ let state = null,
   busy = false,
   automatic = false;
 function futureGoal() {
-  const date = new Date(Date.now() + 21 * 86400000);
+  // Calendar arithmetic: adding 21×24h can land a day off across DST changes.
+  const date = new Date();
+  date.setDate(date.getDate() + 21);
   const when = date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   return `Find one-way flights from Zurich to London on ${when}, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.`;
 }
