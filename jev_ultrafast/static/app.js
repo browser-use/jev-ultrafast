@@ -35,9 +35,10 @@ function controls() {
   $("start").disabled = busy;
   $("scenario").disabled = busy;
   $("goal").disabled = busy;
-  $("choose").disabled = busy || !live;
+  $("choose").disabled = busy || !state?.page;
   $("execute").disabled = busy || !state?.decision || !live;
-  $("auto").disabled = busy || !live;
+  // In a done/blocked state these two start a fresh session with the same goal.
+  $("auto").disabled = busy || !state?.page;
   $("auto").hidden = automatic;
   $("stop").hidden = !automatic;
   $("download").disabled = !state?.history?.length;
