@@ -127,6 +127,53 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        for attribute in ('contenteditable="true"', 'contenteditable', 'contenteditable=""',
+                          'contenteditable="plaintext-only"', 'contenteditable="TRUE"',
+                          'contenteditable="PLAINTEXT-ONLY"'):
+            browser.evaluate("document.body.innerHTML=" + repr(f"""
+              <div id="editor" {attribute} aria-label="Draft"
+                   style="width:400px;min-height:60px;border:1px solid">Old draft</div>
+              <button onclick="document.querySelector('output').textContent=
+                  document.querySelector('#editor').innerText">Save draft</button><output></output>
+              <div contenteditable="false" aria-label="Locked">Locked text</div>
+              <div contenteditable="invalid" aria-label="Invalid">Plain text</div>
+              <div aria-label="Static">Static text</div>
+              <div contenteditable="" hidden aria-label="Hidden">Hidden text</div>
+              <div contenteditable="plaintext-only" inert aria-label="Inert">Inert text</div>
+              <div contenteditable="true" aria-readonly="true" aria-label="Read only">Read only text</div>
+              <div id="other-editor" contenteditable="true" aria-label="Other draft">Keep this
+                <span contenteditable="inherit" aria-label="Inherited">paragraph</span></div>
+            """))
+            page = browser.observe(screenshot=False)
+            draft = [a for a in page["actions"] if a["label"] in {"Draft", "Open Draft"}]
+            assert {a["kind"] for a in draft} == {"fill", "click"}, attribute
+            assert all(a["role"] == "textbox" and a["value"] == "Old draft" for a in draft)
+            assert not any(a["label"] in {"Locked", "Invalid", "Static", "Hidden", "Inert", "Inherited"}
+                           for a in page["actions"])
+            assert {a["kind"] for a in page["actions"] if a["label"] == "Read only"} == {"click"}
+            field = next(a for a in draft if a["kind"] == "fill")
+            browser.act(field, page, text="Revised draft")
+            assert browser.evaluate("document.querySelector('#editor').innerText") == "Revised draft"
+            page = browser.observe(screenshot=False)
+            save = next(a for a in page["actions"] if a["label"] == "Save draft")
+            browser.act(save, page)
+            assert browser.evaluate("document.querySelector('output').textContent") == "Revised draft"
+            assert browser.evaluate("document.querySelector('#other-editor').innerText") == "Keep this paragraph"
+        passed.append("contenteditable variants replace and save text while respecting non-editable controls")
+
+        page = browser.observe(screenshot=False)
+        field = next(a for a in page["actions"] if a["label"] == "Draft" and a["kind"] == "fill")
+        browser.evaluate("document.querySelector('#editor').contentEditable='false'")
+        assert not browser.fresh(page)
+        try:
+            browser.act(field, page, text="Must not be inserted")
+        except StalePage:
+            pass
+        else:
+            raise AssertionError("Editor disabled after observation was typed into")
+        assert browser.evaluate("document.querySelector('#editor').innerText") == "Revised draft"
+        passed.append("removing editability invalidates the observed text action")
     finally:
         browser.close()
     print("\n".join(passed))
