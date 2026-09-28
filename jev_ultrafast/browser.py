@@ -108,7 +108,15 @@ class Browser:
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
+            try:
+                cdp("Target.closeTarget", targetId=self.target)
+            except (RuntimeError, OSError, ValueError):
+                # RuntimeError: the tab already went away - close() wanted exactly
+                # that. OSError: the daemon is down, and the next Agent() revives
+                # it. ValueError: the daemon died between request and response and
+                # the truncated reply cannot be decoded. All mean "nothing to
+                # close"; anything else is unexpected and must surface.
+                pass
             self.target = None
 
 
