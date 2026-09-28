@@ -41,6 +41,19 @@ def close_browser():
         AGENT = None
 
 
+def build_agent(scenario, goal, record):
+    agent = Agent(
+        "https://www.google.com/travel/flights?hl=en"
+        if scenario == "flights"
+        else f"{ORIGIN}/fixture.html?scenario={scenario}",
+        goal,
+        screenshots=True,
+        record_dir=Path.cwd() / "artifacts" / "frames" if record else None,
+    )
+    agent.state["scenario"] = scenario
+    return agent
+
+
 def command(name, body):
     global AGENT
     if name == "reset":
@@ -51,18 +64,16 @@ def command(name, body):
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
         close_browser()
-        AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
-            goal,
-            screenshots=True,
-            record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,
-        )
-        AGENT.state["scenario"] = scenario
+        AGENT = build_agent(scenario, goal, bool(body.get("record")))
     else:
         if AGENT is None:
             raise ValueError("Start a demo first")
+        # A finished run restarts with the same goal, so Run automatically never
+        # requires another Start demo click.
+        if name in {"tick", "predict"} and AGENT.state["status"] in {"done", "blocked"}:
+            previous = AGENT.state
+            close_browser()
+            AGENT = build_agent(previous["scenario"], previous["goal"], previous["record"])
         AGENT.command(name, body)
     return response_state()
 

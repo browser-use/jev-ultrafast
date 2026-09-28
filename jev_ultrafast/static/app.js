@@ -3,8 +3,13 @@ const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
   busy = false,
   automatic = false;
+function futureGoal() {
+  const date = new Date(Date.now() + 21 * 86400000);
+  const when = date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  return `Find one-way flights from Zurich to London on ${when}, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.`;
+}
 const goals = {
-  flights: 'Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.',
+  flights: futureGoal(),
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
@@ -148,11 +153,10 @@ function render() {
 $("task-form").addEventListener("submit", (event) => {
   event.preventDefault();
   automatic = false;
-  perform(
-    () =>
-      call("reset", { scenario: $("scenario").value, goal: $("goal").value }),
-    "Opening a fresh browser…",
-  );
+  perform(async () => {
+    await call("reset", { scenario: $("scenario").value, goal: $("goal").value });
+    await runAuto();
+  }, "Opening a fresh browser…");
 });
 $("scenario").addEventListener("change", () => {
   $("goal").value = goals[$("scenario").value];
@@ -166,25 +170,24 @@ $("execute").addEventListener("click", () =>
     "Executing the choice…",
   ),
 );
-$("auto").addEventListener("click", () =>
-  perform(async () => {
-    automatic = true;
-    controls();
-    for (let i = 0; i < state.max_steps * 2 && automatic; i++) {
-      $("status").textContent = "Running…";
-      if ($("pace").checked) {
-        await call("predict");
-        await new Promise(resolve => setTimeout(resolve, 450));
-        if (!automatic) break;
-        await call("act", {fingerprint: state.page.fingerprint});
-      } else {
-        await call("tick");
-      }
-      if (["done", "blocked"].includes(state.status)) break;
+async function runAuto() {
+  automatic = true;
+  controls();
+  for (let i = 0; i < state.max_steps * 2 && automatic; i++) {
+    $("status").textContent = "Running…";
+    if ($("pace").checked) {
+      await call("predict");
+      await new Promise(resolve => setTimeout(resolve, 450));
+      if (!automatic) break;
+      await call("act", {fingerprint: state.page.fingerprint});
+    } else {
+      await call("tick");
     }
-    automatic = false;
-  }, "Running the browser…"),
-);
+    if (["done", "blocked"].includes(state.status)) break;
+  }
+  automatic = false;
+}
+$("auto").addEventListener("click", () => perform(runAuto, "Running the browser…"));
 $("stop").addEventListener("click", () => {
   automatic = false;
   $("status").textContent = "Pausing after the current request…";
@@ -233,6 +236,7 @@ $("download").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
 });
+$("goal").value = goals[$("scenario").value];
 fetch("/api/state")
   .then((r) => r.json())
   .then((s) => {

@@ -108,7 +108,10 @@ class Browser:
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
+            try:
+                cdp("Target.closeTarget", targetId=self.target)
+            except Exception:
+                pass  # The tab already went away; that is the state close() wants.
             self.target = None
 
 
