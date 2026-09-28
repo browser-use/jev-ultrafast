@@ -59,7 +59,10 @@ def action_space(actions):
             index = str(len(elements) + 1)
             indices[node] = index
             element = {k: action[k] for k in ("role", "value", "checked", "selected", "expanded") if k in action}
-            element.update(index=index, label=action["label"].split(" → ")[0], operations=[])
+            label = action["label"]
+            if kind == "select":
+                label = action.get("element_label", label.split(" → ")[0])
+            element.update(index=index, label=label, operations=[])
             if kind == "select":
                 element["value"] = action.get("current_value", "")
                 element["options"] = []
