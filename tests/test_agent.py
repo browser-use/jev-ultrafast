@@ -276,6 +276,26 @@ def test_fingerprint_tracks_values_and_identity_not_screenshots():
     assert fingerprint(p) != fingerprint(other)
 
 
+def test_fingerprint_ignores_geometry():
+    p = page()
+    p["actions"][0]["rect"] = {"x": 10.0, "y": 20.0, "w": 120.0, "h": 32.0}
+    other = deepcopy(p)
+    other["actions"][0]["rect"] = {"x": 18.0, "y": 24.0, "w": 120.0, "h": 32.0}
+    assert fingerprint(p) == fingerprint(other)
+    other["actions"][0]["value"] = "London"
+    assert fingerprint(p) != fingerprint(other)
+
+
+def test_fingerprint_ignores_document_height_but_not_scroll_position():
+    p = page()
+    p["scroll"] = {"y": 0, "height": 2400}
+    other = deepcopy(p)
+    other["scroll"]["height"] = 2600
+    assert fingerprint(p) == fingerprint(other)
+    other["scroll"]["y"] = 560
+    assert fingerprint(p) != fingerprint(other)
+
+
 @pytest.mark.parametrize("changed", ["Departure", "Where from?", "Where to?", "year"])
 def test_flight_verification_rejects_wrong_trip(changed):
     from examples.flights import verify
