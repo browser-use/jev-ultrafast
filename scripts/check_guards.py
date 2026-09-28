@@ -3,6 +3,7 @@
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
+from jev_ultrafast.model import action_space
 
 HTML = """<!doctype html><title>Guard checks</title>
 <style>body{margin:30px}button{width:180px;height:50px}#outside{position:absolute;top:3000px}</style>
@@ -127,6 +128,67 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <form>
+            <label><input id="preference" type="checkbox">Announcements</label>
+            <button id="inherit" type="button">Use workspace default</button>
+          </form>
+          <label><input id="partial" type="checkbox" checked>Partial selection</label>
+          <label><input id="choice" type="radio" checked>Radio choice</label>
+          <div role="checkbox" aria-checked="mixed">ARIA partial selection</div>
+        """))
+        browser.evaluate("""(() => {
+          const preference=document.querySelector('#preference');
+          window.preferenceValue=false; window.preferenceInputs=0;
+          preference.addEventListener('change',()=>{
+            window.preferenceValue=preference.checked; window.preferenceInputs++;
+          });
+          document.querySelector('#inherit').addEventListener('click',()=>{
+            window.preferenceValue=null; preference.checked=false; preference.indeterminate=true;
+          });
+          document.querySelector('#partial').indeterminate=true;
+          document.querySelector('#choice').indeterminate=true;
+        })()""")
+        before = browser.observe(screenshot=False)
+        preference = next(a for a in before["actions"] if a["label"] == "Announcements")
+        assert preference["checked"] == "false"
+        inherit = next(a for a in before["actions"] if a["label"] == "Use workspace default")
+        browser.act(inherit, before)
+        page = browser.observe(screenshot=False)
+        elements, _, _ = action_space(page["actions"])
+        checked = {e["label"]: e["checked"] for e in elements if "checked" in e}
+        assert checked == {
+            "Announcements": "mixed", "Partial selection": "mixed",
+            "Radio choice": "true", "ARIA partial selection": "mixed",
+        }, checked
+        assert page["fingerprint"] != before["fingerprint"]
+        assert browser.evaluate("window.preferenceValue") is None
+        passed.append("native mixed checkbox state reaches the element table without changing radio or ARIA state")
+
+        assert not browser.fresh(before)
+        assert not browser.fresh(before, preference)
+        assert not browser.fresh(before, inherit)
+        try:
+            browser.act(preference, before)
+        except StalePage:
+            pass
+        else:
+            raise AssertionError("A click based on the old checkbox state was executed")
+        assert browser.evaluate("window.preferenceInputs") == 0
+        assert browser.evaluate("window.preferenceValue") is None
+        preference = next(a for a in page["actions"] if a["label"] == "Announcements")
+        browser.act(preference, page)
+        assert browser.evaluate("window.preferenceInputs") == 1
+        assert browser.evaluate("window.preferenceValue") is True
+        assert browser.evaluate("document.querySelector('#preference').indeterminate") is False
+
+        page = browser.observe(screenshot=False)
+        partial = next(a for a in page["actions"] if a["label"] == "Partial selection")
+        browser.evaluate("document.querySelector('#partial').checked=false")
+        assert not browser.fresh(page)
+        assert not browser.fresh(page, partial)
+        passed.append("mixed-state changes reject stale clicks and preserve underlying checked-state guards")
     finally:
         browser.close()
     print("\n".join(passed))
