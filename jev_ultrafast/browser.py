@@ -13,15 +13,19 @@ from browser_harness.helpers import cdp
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
 # Native date and time fields drop inserted text. Set the value as their picker does, only once the
-# browser accepts the text in the field's form, so a rejected value leaves the field untouched.
+# browser accepts the text in the field's form and limits, so a rejected value leaves the field untouched.
 SET_NATIVE_VALUE = """(([action, text]) => {
-  const e=window.__jevFast?.nodes.get(action.node), probe=document.createElement('input');
-  probe.type=e.type; probe.value=text;
-  if (!probe.value) return null;
+  const e=window.__jevFast?.nodes.get(action.node);
+  if (!e?.isConnected) return {error:'detached'};
+  const probe=document.createElement('input');
+  probe.type=e.type;
+  for (const name of ['min','max','step']) if (e.hasAttribute(name)) probe.setAttribute(name,e.getAttribute(name));
+  probe.value=text;
+  if (!probe.value || !probe.validity.valid) return {error:'rejected'};
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,probe.value);
   e.dispatchEvent(new Event('input',{bubbles:true}));
   e.dispatchEvent(new Event('change',{bubbles:true}));
-  return e.value;
+  return {value:e.value};
 })"""
 
 class StalePage(ValueError):
@@ -178,8 +182,23 @@ def browser_operation(request):
                 for event in ("mousePressed", "mouseReleased"):
                     call("Input.dispatchMouseEvent", type=event, x=x, y=y, button="left", clickCount=1)
                 if kind == "fill" and action.get("format"):
-                    if not evaluate(SET_NATIVE_VALUE + "(" + json.dumps([action, request["text"]]) + ")"):
-                        raise RuntimeError(f"The field takes {action['format']}; nothing was entered.")
+                    # The field's own handlers may navigate once the value is set, so an interrupted
+                    # evaluation is an unconfirmed mutation, never a stale page to retry.
+                    result = call(
+                        "Runtime.evaluate",
+                        expression=SET_NATIVE_VALUE + "(" + json.dumps([action, request["text"]]) + ")",
+                        returnByValue=True,
+                    )
+                    outcome = result.get("result", {}).get("value")
+                    if result.get("exceptionDetails") or not isinstance(outcome, dict):
+                        raise RuntimeError("Date field execution was interrupted; inspect before retrying.")
+                    if outcome.get("error") == "detached":
+                        raise RuntimeError("The date field changed before its value was set; inspect before retrying.")
+                    if outcome.get("error"):
+                        raise RuntimeError(
+                            f"The field rejected {request['text']!r}; it takes {action['format']} within its"
+                            " min, max and step. Nothing was entered."
+                        )
                 elif kind == "fill":
                     call(
                         "Input.dispatchKeyEvent",

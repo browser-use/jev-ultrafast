@@ -273,21 +273,30 @@ def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, r
     assert cdp.call_count == 1
 
 
-@pytest.mark.parametrize(("accepted", "error"), [("2026-09-28", None), (None, "takes YYYY-MM-DD")])
-def test_date_field_value_is_set_not_typed(monkeypatch, accepted, error):
+@pytest.mark.parametrize(
+    ("reply", "error"),
+    [
+        ({"result": {"value": {"value": "2026-09-28"}}}, None),
+        ({"result": {"value": {"error": "rejected"}}}, "rejected '2026-09-28'; it takes YYYY-MM-DD"),
+        ({"result": {"value": {"error": "detached"}}}, "changed before its value was set"),
+        # A navigation started by the field's own change handler destroys the evaluation context.
+        ({"exceptionDetails": {"text": "Execution context was destroyed"}}, "interrupted"),
+        ({"result": {}}, "interrupted"),
+    ],
+)
+def test_date_field_value_is_set_not_typed(monkeypatch, reply, error):
     import jev_ultrafast.browser as browser
 
-    evaluations = []
+    evaluations, sent = [], []
 
     def cdp(method, **params):
+        sent.append(method)
         if method == "Runtime.evaluate":
             evaluations.append(params["expression"])
-            value = {"x": 50, "y": 40} if len(evaluations) == 1 else accepted
-            return {"result": {"value": value}}
+            return {"result": {"value": {"x": 50, "y": 40}}} if len(evaluations) == 1 else reply
         return {}
 
-    sent = []
-    monkeypatch.setattr(browser, "cdp", lambda method, **params: sent.append(method) or cdp(method, **params))
+    monkeypatch.setattr(browser, "cdp", cdp)
     request = {
         "operation": "act",
         "session": "test",
