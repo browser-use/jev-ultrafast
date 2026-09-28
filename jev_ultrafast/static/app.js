@@ -148,11 +148,10 @@ function render() {
 $("task-form").addEventListener("submit", (event) => {
   event.preventDefault();
   automatic = false;
-  perform(
-    () =>
-      call("reset", { scenario: $("scenario").value, goal: $("goal").value }),
-    "Opening a fresh browser…",
-  );
+  perform(async () => {
+    await call("reset", { scenario: $("scenario").value, goal: $("goal").value });
+    await runAuto();
+  }, "Opening a fresh browser…");
 });
 $("scenario").addEventListener("change", () => {
   $("goal").value = goals[$("scenario").value];
@@ -166,25 +165,24 @@ $("execute").addEventListener("click", () =>
     "Executing the choice…",
   ),
 );
-$("auto").addEventListener("click", () =>
-  perform(async () => {
-    automatic = true;
-    controls();
-    for (let i = 0; i < state.max_steps * 2 && automatic; i++) {
-      $("status").textContent = "Running…";
-      if ($("pace").checked) {
-        await call("predict");
-        await new Promise(resolve => setTimeout(resolve, 450));
-        if (!automatic) break;
-        await call("act", {fingerprint: state.page.fingerprint});
-      } else {
-        await call("tick");
-      }
-      if (["done", "blocked"].includes(state.status)) break;
+async function runAuto() {
+  automatic = true;
+  controls();
+  for (let i = 0; i < state.max_steps * 2 && automatic; i++) {
+    $("status").textContent = "Running…";
+    if ($("pace").checked) {
+      await call("predict");
+      await new Promise(resolve => setTimeout(resolve, 450));
+      if (!automatic) break;
+      await call("act", {fingerprint: state.page.fingerprint});
+    } else {
+      await call("tick");
     }
-    automatic = false;
-  }, "Running the browser…"),
-);
+    if (["done", "blocked"].includes(state.status)) break;
+  }
+  automatic = false;
+}
+$("auto").addEventListener("click", () => perform(runAuto, "Running the browser…"));
 $("stop").addEventListener("click", () => {
   automatic = false;
   $("status").textContent = "Pausing after the current request…";
