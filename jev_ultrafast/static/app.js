@@ -3,8 +3,13 @@ const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
   busy = false,
   automatic = false;
+function futureGoal() {
+  const date = new Date(Date.now() + 21 * 86400000);
+  const when = date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  return `Find one-way flights from Zurich to London on ${when}, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.`;
+}
 const goals = {
-  flights: 'Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.',
+  flights: futureGoal(),
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
@@ -233,6 +238,7 @@ $("download").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
 });
+$("goal").value = goals[$("scenario").value];
 fetch("/api/state")
   .then((r) => r.json())
   .then((s) => {
