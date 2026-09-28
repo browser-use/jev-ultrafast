@@ -116,7 +116,10 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    # Treat unset, empty and whitespace-only as "use the hosted endpoint": an empty value must not
+    # produce a relative URL like "/systemone", which httpx rejects as "Model connection failed".
+    base = (os.environ.get("TYPESAFE_BASE_URL", "").strip() or "https://api.typesafe.ai/v1").rstrip("/")
+    result = post_json(base + "/systemone", os.environ["TYPESAFE_API_KEY"], body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None

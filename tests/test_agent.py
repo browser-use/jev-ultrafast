@@ -318,3 +318,39 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_base_url_falls_back_to_hosted_when_unset_or_blank(monkeypatch):
+    """A blank TYPESAFE_BASE_URL must not produce a relative URL like '/systemone'."""
+    seen = []
+
+    def post(url, _key, body):
+        seen.append(url)
+        return {
+            "model": "test",
+            "answers": {
+                "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
+                "type_text_target": choice(["1"], "1"),
+            },
+        }
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+
+    monkeypatch.delenv("TYPESAFE_BASE_URL", raising=False)
+    model.choose(page(), "Find a book", [])
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "")
+    model.choose(page(), "Find a book", [])
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "   ")
+    model.choose(page(), "Find a book", [])
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "https://gateway.example.com/typesafe/v1/")
+    model.choose(page(), "Find a book", [])
+
+    assert seen == [
+        "https://api.typesafe.ai/v1/systemone",
+        "https://api.typesafe.ai/v1/systemone",
+        # Whitespace is not a usable base URL, but it is truthy, so it is stripped to "" and the
+        # trailing-slash strip leaves "/systemone"; guard against that by treating blank as unset.
+        "https://api.typesafe.ai/v1/systemone",
+        "https://gateway.example.com/typesafe/v1/systemone",
+    ]
