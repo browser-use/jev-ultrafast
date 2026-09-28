@@ -149,9 +149,12 @@ def choose(state, goal, history):
 
 
 def field_context(goal, action, page, history):
+    field = {k: action.get(k) for k in ("label", "role", "value")}
+    if action.get("format"):
+        field["format"] = action["format"]
     return {
         "goal": goal,
-        "field": {k: action.get(k) for k in ("label", "role", "value")},
+        "field": field,
         "page": {"title": page["title"], "text": page["text"][:6000]},
         "recent_actions": [{k: h.get(k) for k in ("action", "text")} for h in history[-6:]],
     }
