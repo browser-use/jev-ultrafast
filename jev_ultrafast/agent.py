@@ -1,6 +1,7 @@
 """The complete agent loop. Typed choices, observable state, bounded execution."""
 
 import base64
+import os
 import time
 from pathlib import Path
 
@@ -14,6 +15,14 @@ class Agent:
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
+        if not os.environ.get("TEXT_MODEL_API_KEY"):
+            import warnings
+
+            warnings.warn(
+                "TEXT_MODEL_API_KEY is not set. TYPE_TEXT steps will raise at runtime. "
+                "Set it in .env before running a task that needs text input.",
+                stacklevel=2,
+            )
         plan = [task]
         self.pending_text = None
         self.browser = Browser(url)
