@@ -97,7 +97,7 @@ class Browser:
         # overlay being built, or the control just opened reports itself expanded while its own options have
         # not reached the table (Google Flights' ticket-type menu does this with the page left visible).
         opened = acted["id"] if acted else None
-        first, deadline = page["fingerprint"], time.monotonic() + OVERLAY_SETTLE
+        first, deadline, reads = page["fingerprint"], time.monotonic() + OVERLAY_SETTLE, 0
         while acted and time.monotonic() < deadline and (
             page.get("aria_hidden_fallback")
             or (
@@ -108,8 +108,10 @@ class Browser:
             time.sleep(0.2)
             try:
                 page = read()
+                reads += 1
             except StalePage:
                 break
+        page["overlay_reads"] = reads
         return page
 
     def fresh(self, page, action=None):

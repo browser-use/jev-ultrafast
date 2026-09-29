@@ -102,7 +102,9 @@ function render() {
   $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
-  $("action-count").textContent = `${state.elements.length} elements`;
+  const settled = page.overlay_reads ? ` · ${page.overlay_reads} re-read${page.overlay_reads > 1 ? "s" : ""} for the overlay` : "";
+  $("action-count").textContent =
+    `${state.elements.length} elements${page.aria_hidden_fallback ? " · read through the hidden page" : ""}${settled}`;
   const chosen = page.actions.find((a) => a.id === d?.choice);
   $("choice-title").textContent = d
     ? chosen?.label || d.choice
