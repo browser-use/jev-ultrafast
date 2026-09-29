@@ -549,6 +549,11 @@ def test_the_expanded_wait_only_answers_for_the_control_that_was_input(monkeypat
     assert page["overlay_reads"] == 0
 
 
+def test_the_panel_payload_carries_the_wait_note(runner):
+    runner.state["page"]["overlay_reads"] = 2
+    assert runner.snapshot()["page"]["overlay_reads"] == 2, "the panel reads the payload, not the browser"
+
+
 def test_a_table_that_moves_on_its_own_ends_the_expanded_wait(monkeypatch):
     b, reads = reader(
         monkeypatch,
