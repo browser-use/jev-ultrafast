@@ -27,6 +27,7 @@ def page():
         ],
     }
     state["fingerprint"] = fingerprint(state)
+    state["overlay_reads"] = 0  # attached after the fingerprint, exactly as observe() does it
     return state
 
 
@@ -552,6 +553,14 @@ def test_the_expanded_wait_only_answers_for_the_control_that_was_input(monkeypat
 def test_the_panel_payload_carries_the_wait_note(runner):
     runner.state["page"]["overlay_reads"] = 2
     assert runner.snapshot()["page"]["overlay_reads"] == 2, "the panel reads the payload, not the browser"
+
+
+def test_the_history_row_says_what_the_observation_after_it_cost(runner):
+    runner.state["decision"] = decision("e3")
+    runner.state["browser"].observe.return_value = settled = page()
+    settled["overlay_reads"] = 3
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["history"][-1]["overlay_reads"] == 3, "a slow run must be attributable from its own trace"
 
 
 def test_a_table_that_moves_on_its_own_ends_the_expanded_wait(monkeypatch):

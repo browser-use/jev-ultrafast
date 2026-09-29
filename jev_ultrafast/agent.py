@@ -198,6 +198,7 @@ class Agent:
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             state["history"][-1].update(
                 page_changed=state["page"]["fingerprint"] != page["fingerprint"],
+                overlay_reads=state["page"]["overlay_reads"],
                 url=state["page"]["url"],
                 elapsed_ms=state["elapsed_ms"],
             )
