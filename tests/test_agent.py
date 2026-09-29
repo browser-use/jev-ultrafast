@@ -318,3 +318,20 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_agent_warns_when_text_model_key_missing(monkeypatch):
+    monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
+    monkeypatch.setattr(loop, "Browser", Mock())
+    with pytest.warns(UserWarning, match="TEXT_MODEL_API_KEY"):
+        loop.Agent("https://example.test", "Find a flight")
+
+
+def test_agent_no_warning_when_text_model_key_set(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test-key")
+    monkeypatch.setattr(loop, "Browser", Mock())
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loop.Agent("https://example.test", "Find a flight")
