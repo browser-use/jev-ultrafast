@@ -105,11 +105,18 @@ class Agent:
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
             action = next(a for a in page["actions"] if a["id"] == selected)
-            # Verify node identity matches decision-time node; stale ids must not silently
-            # resolve to a different control (#132).
+            # Stale-id guard (#132): re-observe and verify the selected id still maps
+            # to the same DOM node chosen at decision time.  The previous inline
+            # comparison was always-true because _match and action resolved against
+            # the same page object; a fresh observation is required to detect reuse.
             _expected = decision.get("expected_node")
-            if _expected is not None and action.get("node") != _expected:
-                raise StalePage("Selected action resolved to a different control. Choose again.")
+            if _expected is not None and action.get("kind") != "fill":
+                _fresh_page = state["browser"].observe(screenshot=False)
+                _fresh_action = next(
+                    (a for a in _fresh_page["actions"] if a["id"] == selected), None
+                )
+                if _fresh_action is None or _fresh_action.get("node") != _expected:
+                    raise StalePage("Selected action resolved to a different control. Choose again.")
             if len(state["history"]) >= MAX_STEPS:
                 state["status"] = "blocked"
                 raise ValueError(f"Stopped at the {MAX_STEPS}-action demo budget")
