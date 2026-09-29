@@ -50,21 +50,37 @@ try:
 except Exception as exc:
     error = f"{type(exc).__name__}: {exc}"
 finally:
-    state = agent.snapshot()
-    measured_calls = {method: {"count": len(times), "ms": round(sum(times), 3)} for method, times in calls.items()}
-    # Both arms use a NEW final observation for the independent result check, outside timing.
-    final = agent.browser.observe(screenshot=True)
-    state["verification"] = verify(final)
-    state["error"] = error
-    state["cdp"] = measured_calls
-    state["source_hashes"] = source_hashes
-    state["task_hash"] = hashlib.sha256(json.dumps([URL, GOALS]).encode()).hexdigest()
-    state["configuration"] = {
-        key: os.environ.get(key)
-        for key in ("TYPESAFE_MODEL", "TEXT_MODEL", "TEXT_MODEL_BASE_URL", "TEXT_MODEL_REASONING")
-    }
-    state["browser_version"] = agent.browser.call("Browser.getVersion")["product"]
-    state["final_page"] = final
-    (folder / "state.json").write_text(json.dumps(state, indent=2))
-    agent.close()
+    finalization_error = None
+    try:
+        state = agent.snapshot()
+        # Final evidence collection is outside the measured browser work.
+        measured_calls = {method: {"count": len(times), "ms": round(sum(times), 3)} for method, times in calls.items()}
+        state["error"] = error
+        state["cdp"] = measured_calls
+        state["source_hashes"] = source_hashes
+        state["task_hash"] = hashlib.sha256(json.dumps([URL, GOALS]).encode()).hexdigest()
+        state["configuration"] = {
+            key: os.environ.get(key)
+            for key in ("TYPESAFE_MODEL", "TEXT_MODEL", "TEXT_MODEL_BASE_URL", "TEXT_MODEL_REASONING")
+        }
+        # A missing fresh observation must not turn the cached page into a successful verification.
+        state["final_page"] = None
+        try:
+            state["final_page"] = agent.browser.observe(screenshot=True)
+            state["verification"] = verify(state["final_page"])
+        except Exception as exc:
+            state["verification"] = {"passed": False, "error": f"{type(exc).__name__}: {exc}"}
+            finalization_error = exc
+        try:
+            state["browser_version"] = agent.browser.call("Browser.getVersion")["product"]
+        except Exception as exc:
+            state["browser_version"] = None
+            state["browser_version_error"] = f"{type(exc).__name__}: {exc}"
+            if finalization_error is None:
+                finalization_error = exc
+        (folder / "state.json").write_text(json.dumps(state, indent=2))
+    finally:
+        agent.close()
+    if finalization_error is not None:
+        raise finalization_error
 print("VERIFIED", state["verification"]["passed"], "ERROR", error, flush=True)
