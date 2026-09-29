@@ -128,6 +128,25 @@ All seven independent route/date checks passed in every run of both arms, so the
 
 Two things this does not claim. The control arm is two runs: the direction reproduces in five of five and the gap is larger than anything in the spread, but a two-run arm is a two-run arm. And the menu's options still only reach the table *after* the trigger has left it -- the grid above reads 0 for "expanded and options together" in the new runs as well, because on this site those two never coexist. What changed is that the loop no longer pays to sit in that moment and click through it; it is not that the moment became readable.
 
+## Saying what an observation cost, 2026-09-29
+
+Every number above was reconstructed after the fact by a dedicated probe, because a saved page said nothing about how it was obtained. The reader now reports its own cost: `observe()` counts the re-reads it performed inside the bounded wait and attaches them as `overlay_reads`, the panel's element line renders that as `2 re-reads for the overlay` beside the existing hidden-page note, and every executed step's history row carries the count of the observation that followed it -- so the question "which step sat in a menu" is answered by the trace rather than by an experiment.
+
+Two live episodes of `examples/flights.py`, same goal, same models, after the change:
+
+| Run | Steps | Paid | Wall | Checks passed | Steps that paid a re-read | Max on one step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `n1` | 11 | 19 | 14.1 s | 7 / 7 | not recorded (predates the row) | -- |
+| `n2` | 11 | 19 | 14.1 s | 7 / 7 | 1 | 13 |
+
+`n2` spent 13 re-reads on its first executed step, the ticket-type trigger: 13 passes at a 0.2 s floor is 2.6 s of the 3.0 s `OVERLAY_SETTLE` budget, against 0 on the other ten steps. That is the shape the field was added to show -- one step pays, and the seconds it pays are no longer mixed into browser time with no label.
+
+What the field does not say: *why* the wait stopped. `n2`'s 13 reads are consistent with running out the deadline, but an exit on a table that kept moving while its opened control stayed expanded would count the same, and the row does not record which. Both exits have their own offline test.
+
+Gates: 70 passed with the debug browser up (the 13 live-snapshot tests skip rather than pass without it, and a skipped gate is not a green one), `ruff` clean, `node --check` clean, `uv build` clean. The promise is pinned by 5 offline assertions on the counter and its boundaries, 1 on the payload reaching the panel, 1 on the history row, and a node harness that loads the shipped `static/app.js` into a fake DOM and compares 5 rendered strings -- outside `pytest`, because `pytest` cannot see `app.js`. The mutation battery is at 25 and stood 25/25 in a single round, red sets compared by exact set equality.
+
+One correction about the battery itself, found while adding those five: its `pytest` invocation passed `-rfE` and then `-rs`. `-r` takes a single value, so the later flag silently replaced the earlier one, no `FAILED`/`ERROR` names were ever printed, and the parsed red set came back empty for every mutant -- while the counts line still read `5 failed`. Ten rows of the 2026-09-28 round in `battery_expand3.log` were produced that way, so the verdicts in that round are void; the flag is now one `-rfEs`, and `run_suite` aborts when the counts line reports more failures than it parsed names for, on either channel. A sweep whose parser is blind must fail, not report that the rules came unpinned.
+
 ## Development attempts retained
 
 Before freezing the candidate, the original runtime passed once in 9.302 s. Two accessibility-tree/semantic-guard candidates took 9.395 s and 10.157 s. The first direct-DOM candidate took 8.697 s but failed independent verification because name/value extraction was incomplete. Recursive labels and combobox values fixed that failure; subsequent verified diagnostics took 8.051, 8.631, 8.395, 8.385, and 7.741 s. A Mercury diagnostic passed in 7.559 s. These are changed-code development attempts, not the matched comparison above.
