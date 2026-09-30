@@ -148,6 +148,18 @@ def choose(state, goal, history):
     }
 
 
+def _strip_code_fences(text):
+    """Remove a surrounding markdown code fence (with or without a language tag)."""
+    if not isinstance(text, str):
+        raise ValueError("Text helper response was not a string")
+    lines = text.strip().splitlines()
+    if lines and lines[0].lstrip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
 def field_context(goal, action, page, history):
     return {
         "goal": goal,
@@ -167,32 +179,39 @@ def field_text(context):
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
     started = time.perf_counter()
-    result = post_json(
-        base + "/chat/completions",
-        key,
-        {
+    for attempt in range(3):
+        result = post_json(
+            base + "/chat/completions",
+            key,
+            {
+                "model": model,
+                "max_tokens": 1024,
+                "response_format": {"type": "json_object"},
+                **reasoning,
+                "messages": [
+                    {"role": "system", "content": TEXT_VALUE},
+                    {
+                        "role": "user",
+                        "content": json.dumps(context),
+                    },
+                ],
+            },
+        )
+        content = result["choices"][0]["message"]["content"]
+        try:
+            output = json.loads(_strip_code_fences(content))
+            value = output["text"]
+            if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
+                raise ValueError()
+        except (ValueError, KeyError, TypeError):
+            if attempt < 2:
+                time.sleep(0.5 * 2**attempt)
+                continue
+            raise ValueError(
+                f"Text helper returned no valid field value; nothing typed. Response: {content!r}"
+            ) from None
+        return value, {
             "model": model,
-            "max_tokens": 1024,
-            "response_format": {"type": "json_object"},
-            **reasoning,
-            "messages": [
-                {"role": "system", "content": TEXT_VALUE},
-                {
-                    "role": "user",
-                    "content": json.dumps(context),
-                },
-            ],
-        },
-    )
-    try:
-        output = json.loads(result["choices"][0]["message"]["content"])
-        value = output["text"]
-        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
-    return value, {
-        "model": model,
-        "latency_ms": round((time.perf_counter() - started) * 1000),
-        "usage": result.get("usage", {}),
-    }
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "usage": result.get("usage", {}),
+        }

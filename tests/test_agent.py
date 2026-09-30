@@ -312,6 +312,51 @@ def test_text_helper_rejects_invalid_values(monkeypatch, content):
         model.field_text({"goal": "Find a flight"})
 
 
+def test_text_helper_strips_fenced_response(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setattr(
+        model,
+        "post_json",
+        Mock(return_value={"choices": [{"message": {"content": '```json\n{"text": "Zurich"}\n```'}}]}),
+    )
+    value, _meta = model.field_text({"goal": "Find a flight"})
+    assert value == "Zurich"
+
+
+def test_text_helper_strips_trailing_fence(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setattr(
+        model,
+        "post_json",
+        Mock(return_value={"choices": [{"message": {"content": '{"text": "London"}\n```'}}]}),
+    )
+    value, _meta = model.field_text({"goal": "Find a flight"})
+    assert value == "London"
+
+
+def test_text_helper_retries_malformed_sample(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    responses = [
+        {"choices": [{"message": {"content": "not json at all"}}]},
+        {"choices": [{"message": {"content": '{"text": "Zurich"}'}}]},
+    ]
+    monkeypatch.setattr(model, "post_json", Mock(side_effect=lambda *a, **k: responses.pop(0)))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    value, _meta = model.field_text({"goal": "Find a flight"})
+    assert value == "Zurich"
+    assert not responses
+
+
+def test_text_helper_reports_response_after_retries(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    bad = {"choices": [{"message": {"content": '{"text": 123}'}}]}
+    monkeypatch.setattr(model, "post_json", Mock(return_value=bad))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    with pytest.raises(ValueError, match="nothing typed") as excinfo:
+        model.field_text({"goal": "Find a flight"})
+    assert repr('{"text": 123}') in str(excinfo.value)
+
+
 def test_navigation_during_prediction_reobserves_without_action(runner):
     runner.state["browser"].fresh.side_effect = StalePage("Document navigating")
     runner.command("tick")
