@@ -24,7 +24,7 @@
     "render": "deno run --allow-read --allow-write --allow-env --allow-ffi --allow-sys --allow-run=ffmpeg scripts/render_demo.ts",
     "render:fixture": "deno run --allow-read --allow-write --allow-env --allow-ffi --allow-sys --allow-run=ffmpeg scripts/render_fixture.ts",
     "test": "deno test --allow-read",
-    "check": "deno fmt --check && deno lint && deno check src tests examples scripts src/snapshot.js src/static/app.js && deno test --allow-read && deno publish --dry-run --allow-dirty"
+    "check": "deno install --frozen && deno fmt --check && deno lint && deno check src tests examples scripts src/snapshot.js src/static/app.js && deno test --allow-read && deno publish --dry-run --allow-dirty"
   },
   "compilerOptions": {
     "strict": true,

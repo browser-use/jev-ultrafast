@@ -19,14 +19,15 @@ const SCENARIOS = new Set(["travel", "research", "flights"]);
 
 /** Run the inspector on 127.0.0.1 until SIGINT/SIGTERM. */
 export async function main(): Promise<void> {
-  const port = Number(Deno.env.get("TYPESAFE_DEMO_PORT") ?? "8766");
   loadEnvironment();
+  const port = Number(Deno.env.get("TYPESAFE_DEMO_PORT") ?? "8766");
   const host = `127.0.0.1:${port}`;
   const origin = `http://${host}`;
   const token = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   let agent: Agent | null = null;
   let lease: CdpLease | null = null;
   let busy: Promise<void> | null = null;
+  let stopping = false;
 
   const send = (status: number, content: string | Uint8Array, mime = "application/json"): Response =>
     new Response(content as BodyInit, {
@@ -51,7 +52,8 @@ export async function main(): Promise<void> {
       if (typeof scenario !== "string" || !SCENARIOS.has(scenario)) throw new JevError("Unknown demo scenario");
       const goal = typeof body.goal === "string" ? body.goal.trim() : body.goal === undefined ? "" : null;
       if (!goal || [...goal].length > 2000) throw new JevError("Enter 1–2,000 characters");
-      await closeBrowser();
+      // Best effort: after a Chrome restart the old connection is dead and Browser.close() fails.
+      await closeBrowser().catch(() => {});
       if (!lease || lease.cdp.closed) {
         await lease?.release();
         lease = null;
@@ -82,11 +84,11 @@ export async function main(): Promise<void> {
       while (busy) await busy;
       return send(200, JSON.stringify(responseState()));
     }
-    if (path === "/demo.mp4") {
+    if (path === "/demo.mp4" && import.meta.url.startsWith("file:")) {
       try {
         return send(200, await Deno.readFile(new URL("../docs/demo.mp4", import.meta.url)), "video/mp4");
-      } catch (error) {
-        if (!(error instanceof Deno.errors.NotFound)) throw error;
+      } catch {
+        // Missing or unreadable video: fall through to 404.
       }
     }
     const file = STATIC[path];
@@ -132,6 +134,7 @@ export async function main(): Promise<void> {
 
   const server = Deno.serve({ hostname: "127.0.0.1", port, onListen: () => {} }, async (request) => {
     if (request.headers.get("Host") !== host) return send(403, "Forbidden", "text/plain");
+    if (stopping) return send(503, JSON.stringify({ error: "Shutting down" }));
     const path = new URL(request.url).pathname;
     try {
       if (request.method === "GET") return await get(path);
@@ -144,7 +147,6 @@ export async function main(): Promise<void> {
   });
   console.log(`Jev Ultrafast: ${origin}`);
 
-  let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;

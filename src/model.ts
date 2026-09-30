@@ -3,6 +3,7 @@
 import { APIConnectionError, APIError, type SystemOneRequest, TypeSafeClient, TypeSafeError } from "@typesafe-ai/sdk";
 import { JevError, ModelError } from "./errors.ts";
 import { NEXT_ACTION, TARGET, TEXT_VALUE } from "./questions.ts";
+import { pythonJsonDumps } from "./json.ts";
 import type {
   Action,
   ChoiceAnswer,
@@ -323,7 +324,7 @@ export async function fieldText(
       ...reasoning,
       messages: [
         { role: "system", content: TEXT_VALUE },
-        { role: "user", content: JSON.stringify(context) },
+        { role: "user", content: pythonJsonDumps(context) },
       ],
     },
     opts.fetch,

@@ -187,11 +187,19 @@ export interface CdpLease {
 
 let slot: Promise<CdpConnection> | null = null;
 let refs = 0;
+const defaultConnect = (): Promise<CdpConnection> => resolveWsUrl().then((url) => CdpConnection.connect(url));
+let connectShared = defaultConnect;
+
+/** Internal, for offline tests: replace how the shared connection opens. Returns a restore function. */
+export function _setSharedConnect(connect: () => Promise<CdpConnection>): () => void {
+  connectShared = connect;
+  return () => connectShared = defaultConnect;
+}
 
 /** Acquire the process-wide CDP connection, connecting on first use. */
 export async function acquireCdp(): Promise<CdpLease> {
   if (!slot) {
-    const connecting: Promise<CdpConnection> = resolveWsUrl().then((url) => CdpConnection.connect(url));
+    const connecting: Promise<CdpConnection> = connectShared();
     slot = connecting;
     refs = 0;
     connecting.then(
@@ -208,8 +216,15 @@ export async function acquireCdp(): Promise<CdpLease> {
     );
   }
   const current = slot;
-  const cdp = await current;
+  // Count this reference before awaiting, so a concurrent last release cannot close the socket under us.
   refs++;
+  let cdp: CdpConnection;
+  try {
+    cdp = await current;
+  } catch (error) {
+    if (slot === current) refs--;
+    throw error;
+  }
   let released = false;
   return {
     cdp,

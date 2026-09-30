@@ -92,12 +92,37 @@ Deno.test("after-input wait swallows CdpError and still observes", async () => {
   assertEquals(cdp.calls.filter((c) => c.params?.awaitPromise).length, 1);
 });
 
-Deno.test("after-input wait does not swallow CdpTimeout", async () => {
-  const { b, operation } = await browserAfterClick(() => {
+Deno.test("after-input wait swallows CdpTimeout from a slow navigation and still observes", async () => {
+  const { b, p, cdp, operation } = await browserAfterClick(() => {
     throw new CdpTimeout("Runtime.evaluate timed out after 5s");
   });
+  assertEquals(await b.observe({ screenshot: false }), p);
+  assertSpyCalls(operation, 2);
+  assertEquals(cdp.calls.filter((c) => c.params?.awaitPromise).length, 1);
+});
+
+Deno.test("observe re-reads after a CdpTimeout, a read-only failure", async () => {
+  const p = await page();
+  let reads = 0;
+  const cdp = new FakeCdp((call) => {
+    assertEquals(call.method, "Runtime.evaluate");
+    if (++reads <= 2) throw new CdpTimeout("Runtime.evaluate timed out after 5s");
+    return { result: { value: structuredClone(p) } };
+  });
+  const b = new Browser(cdp, "target", "session");
+  const observed = await b.observe({ screenshot: false });
+  assertEquals(observed.fingerprint, p.fingerprint);
+  assertEquals(cdp.calls.map((c) => c.method), ["Runtime.evaluate", "Runtime.evaluate", "Runtime.evaluate"]);
+});
+
+Deno.test("observe surfaces CdpTimeout on the tenth attempt", async () => {
+  const b = new Browser(new FakeCdp(() => ({})), "target", "session");
+  const operation = spy(
+    (() => Promise.reject(new CdpTimeout("Runtime.evaluate timed out after 5s"))) as unknown as Operation,
+  );
+  b.operation = operation;
   await assertRejects(() => b.observe({ screenshot: false }), CdpTimeout);
-  assertSpyCalls(operation, 1);
+  assertSpyCalls(operation, 10);
 });
 
 Deno.test("observe retries a settling page ten times, then surfaces StalePage", async () => {

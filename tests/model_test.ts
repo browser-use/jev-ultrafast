@@ -3,7 +3,7 @@ import { assert, assertEquals, assertInstanceOf, assertRejects, assertStringIncl
 import { FakeTime } from "@std/testing/time";
 import { JevError, ModelError } from "../src/mod.ts";
 import { actionSpace, choose, fieldContext, fieldText, postJson, validateChoice } from "../src/model.ts";
-import { canonicalJson } from "../src/json.ts";
+import { canonicalJson, pythonJsonDumps } from "../src/json.ts";
 import { choice, fakeFetch, page } from "./_helpers.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -274,4 +274,22 @@ Deno.test("canonicalJson sorts keys, omits undefined keys and nulls undefined ar
     '{"a":{"c":"x","d":[1,null]},"b":1}',
   );
   assertEquals(canonicalJson({ x: 1, y: [2, { q: 1, p: 2 }] }), canonicalJson({ y: [2, { p: 2, q: 1 }], x: 1 }));
+});
+
+Deno.test("pythonJsonDumps matches Python json.dumps bytes", () => {
+  assertEquals(pythonJsonDumps({ a: "Zürich", b: [1, null] }), '{"a": "Z\\u00fcrich", "b": [1, null]}');
+  assertEquals(pythonJsonDumps("✈😀"), '"\\u2708\\ud83d\\ude00"');
+  assertEquals(
+    pythonJsonDumps({ q: 'say "hi"\\\n\t\x7f', t: true, f: false, e: {}, l: [] }),
+    '{"q": "say \\"hi\\"\\\\\\n\\t\\u007f", "t": true, "f": false, "e": {}, "l": []}',
+  );
+});
+
+Deno.test("text helper sends the context as Python json.dumps text", async () => {
+  const fetch = fakeFetch(() => textReply('{"text":"Zürich"}'));
+  await fieldText({ goal: "Fly from Zürich 😀", field: { label: null } }, { fetch, env: TEXT });
+  assertEquals(
+    (fetch.calls[0].body as Json).messages[1].content,
+    '{"goal": "Fly from Z\\u00fcrich \\ud83d\\ude00", "field": {"label": null}}',
+  );
 });

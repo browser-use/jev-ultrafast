@@ -128,7 +128,7 @@ Every executed target is resolved from an observed node. The executor rechecks p
 ## Evidence and limits
 
 > [!NOTE]
-> Every measurement, recording, and source hash below comes from the prior Python implementation (last Python commit [`1231850`](https://github.com/syncretic-cc/jev-ultrafast-typescript/tree/1231850)). They were not re-recorded for this TypeScript port. The raw evidence in [docs/](docs/) is unchanged, so its source hashes name Python files.
+> Every measurement, recording, and source hash below comes from the prior Python implementation (last Python commit [`1231850`](https://github.com/syncretic-cc/jev-ultrafast-typescript/tree/1231850)). They were not re-recorded for this TypeScript port. The raw evidence in [docs/](docs/) is unchanged, so its source hashes name Python files. The committed media ([demo.mp4](docs/demo.mp4), [demo.gif](docs/demo.gif), and [flights-result.png](docs/flights-result.png)) were rendered by the prior Python renderer and have not been re-rendered with `scripts/render_demo.ts`.
 
 The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
 
@@ -144,9 +144,9 @@ A `DONE` choice still requires independent outcome verification. The DOM reader 
 deno task check
 ```
 
-That runs `deno fmt --check`, `deno lint`, `deno check` (including `src/snapshot.js` and `src/static/app.js`), `deno test --allow-read`, and `deno publish --dry-run`.
+That runs `deno install --frozen`, `deno fmt --check`, `deno lint`, `deno check` (including `src/snapshot.js` and `src/static/app.js`), `deno test --allow-read`, and `deno publish --dry-run`.
 
-Tests are offline and need no credentials. `deno task guards` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `deno task record <new-folder>` captures original browser timestamps; `deno task render <recording-folder>` renders that verified run at 1× and crops out the Google account strip (rendering needs `ffmpeg` on `PATH`). Credentials and raw traces stay ignored.
+Tests are offline and need no credentials. `deno task guards` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `deno task record artifacts/flights/<new-folder>` captures original browser timestamps; the folder must be new and under `artifacts/`, since tasks may only write there (the same applies to `deno task flights --output` and `deno task measure --output`); `deno task render <recording-folder>` renders that verified run at 1× and crops out the Google account strip (rendering needs `ffmpeg` on `PATH`). Credentials and raw traces stay ignored.
 
 ---
 

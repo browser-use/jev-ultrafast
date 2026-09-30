@@ -1,7 +1,7 @@
 /** Observed actions through one direct CDP session. Code owns execution; the model never emits selectors. */
 
 import { acquireCdp, type CdpLease } from "./cdp.ts";
-import { CdpError, JevError, StalePage } from "./errors.ts";
+import { CdpError, CdpTimeout, JevError, StalePage } from "./errors.ts";
 import { canonicalJson, isTruthy, jsonEqual } from "./json.ts";
 import type {
   Action,
@@ -210,7 +210,7 @@ export class Browser implements BrowserLike {
     if (this.afterInput) {
       const action = this.afterInput;
       this.afterInput = null;
-      // This is read-only and happens after execution was logged, even if navigation interrupts it.
+      // This is read-only and happens after execution was logged, even if navigation interrupts or outlasts it.
       try {
         await this.call("Runtime.evaluate", {
           expression: AFTER_INPUT + JSON.stringify(action) + ")",
@@ -218,14 +218,15 @@ export class Browser implements BrowserLike {
           returnByValue: true,
         });
       } catch (error) {
-        if (!(error instanceof CdpError)) throw error;
+        if (!(error instanceof CdpError || error instanceof CdpTimeout)) throw error;
       }
     }
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
         return await this.operation({ operation: "observe", session: this.session, screenshot }, this.cdp) as PageState;
       } catch (error) {
-        if (!(error instanceof StalePage) || attempt === 9) throw error;
+        // Observation is read-only, so a slow navigation (timeout) is re-read like a settling page.
+        if (!(error instanceof StalePage || error instanceof CdpTimeout) || attempt === 9) throw error;
         await sleep(20);
       }
     }
