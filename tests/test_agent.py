@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
+import jev_ultrafast.demo as demo
 from jev_ultrafast import agent as loop
 from jev_ultrafast import model
 from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
@@ -318,3 +319,39 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+def test_health_state_reports_browser_ready(monkeypatch):
+    monkeypatch.setattr(demo, "daemon_alive", lambda: True)
+    monkeypatch.setattr(demo, "cdp", lambda method: {"product": "Chrome"} if method == "Browser.getVersion" else {})
+
+    assert demo.health_state() == {
+        "server": True,
+        "harness": True,
+        "chrome": True,
+        "chrome_error": None,
+    }
+
+def test_health_state_reports_missing_harness(monkeypatch):
+    monkeypatch.setattr(demo, "daemon_alive", lambda: False)
+
+    assert demo.health_state() == {
+        "server": True,
+        "harness": False,
+        "chrome": False,
+        "chrome_error": None,
+    }
+
+def test_health_state_reports_cdp_failure(monkeypatch):
+    monkeypatch.setattr(demo, "daemon_alive", lambda: True)
+
+    def fail_cdp(method):
+        raise RuntimeError("connection closed")
+
+    monkeypatch.setattr(demo, "cdp", fail_cdp)
+
+    assert demo.health_state() == {
+        "server": True,
+        "harness": True,
+        "chrome": False,
+        "chrome_error": "connection closed",
+    }

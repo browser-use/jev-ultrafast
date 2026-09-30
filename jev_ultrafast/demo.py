@@ -9,6 +9,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from browser_harness.admin import daemon_alive
+from browser_harness.helpers import cdp
+
 from .agent import Agent
 from .questions import MAX_STEPS
 
@@ -66,6 +69,24 @@ def command(name, body):
         AGENT.command(name, body)
     return response_state()
 
+def health_state():
+    harness = daemon_alive()
+    chrome = False
+    chrome_error = None
+
+    if harness:
+        try:
+            cdp("Browser.getVersion")
+            chrome = True
+        except (RuntimeError, TimeoutError) as error:
+            chrome_error = str(error)
+
+    return {
+        "server": True,
+        "harness": harness,
+        "chrome": chrome,
+        "chrome_error": chrome_error,
+    }
 
 class Handler(BaseHTTPRequestHandler):
     def send(self, status, content, mime="application/json"):
@@ -85,6 +106,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             with LOCK:
                 return self.send(200, json.dumps(response_state()))
+        if path == "/api/health":
+            return self.send(200, json.dumps(health_state()))
         if path == "/demo.mp4":
             video = ROOT.parent / "docs" / "demo.mp4"
             if video.exists():
