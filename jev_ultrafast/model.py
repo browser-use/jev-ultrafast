@@ -23,7 +23,15 @@ def post_json(url, key, body):
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
-        return response.json()
+        data = response.json()
+        error = data.get("error") if isinstance(data, dict) else None
+        if error:
+            message = error.get("message", error) if isinstance(error, dict) else error
+            if attempt < 2 and isinstance(error, dict) and error.get("code") in {429, 503, 504, 529}:
+                time.sleep(0.5 * 2**attempt)
+                continue
+            raise RuntimeError(f"Model provider returned an error: {message}")
+        return data
     raise RuntimeError("Model unavailable")
 
 
