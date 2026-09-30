@@ -81,6 +81,7 @@ def health_state():
             chrome = True
         except Exception as error:
             chrome_error = str(error)
+            print(f"preflight: chrome probe failed: {chrome_error}", flush=True)
 
     return {
         "server": True,
