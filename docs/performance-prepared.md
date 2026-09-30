@@ -1,5 +1,8 @@
 # A real flight search, at real speed
 
+> [!NOTE]
+> Historical record from the earlier Python prototype. Nothing on this page was re-measured for the TypeScript port; [measurement.json](measurement.json) and [flights-prepared-measurement.json](flights-prepared-measurement.json) are unchanged.
+
 **12.884 seconds on Google Flights.** Zürich → London, one way, Sunday 20 September 2026, one adult, economy. Historical prepared recording (the primary demo has since been replaced) · [Machine-readable evidence](flights-prepared-measurement.json).
 
 | Recorded run | Measurement |

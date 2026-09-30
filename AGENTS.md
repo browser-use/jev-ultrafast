@@ -13,4 +13,4 @@ Read README.md before editing. Keep the loop small: page -> indexed elements -> 
 - Keep examples, README claims, raw evidence, and model-call counts consistent.
 - Do not commit or push unless the user requests it.
 
-Checks: uv run ruff check ., uv run pytest, node --check jev_ultrafast/static/app.js, uv build.
+Checks: deno task check (deno fmt --check, deno lint, deno check src tests examples scripts src/snapshot.js src/static/app.js, deno test --allow-read, deno publish --dry-run --allow-dirty).

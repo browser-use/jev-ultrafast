@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.x
+          cache: true
+      # Offline checks only: no secrets, no paid API calls, no browser.
+      - run: deno install --frozen
+      - run: deno fmt --check
+      - run: deno lint
+      - run: deno check src tests examples scripts src/snapshot.js src/static/app.js
+      - run: deno test --allow-read
+      - run: deno publish --dry-run --allow-dirty

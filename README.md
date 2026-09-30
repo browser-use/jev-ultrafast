@@ -2,19 +2,17 @@
 
 # Jev Ultrafast ⚡
 
-> [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
-
 **A browser agent with a dynamic, indexed action space.**
 
 Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
 
 **Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
 
+Measured with the prior Python implementation; see [Evidence and limits](#evidence-and-limits).
+
 <a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
 
-[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
+[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](src/agent.ts)
 
 ## The action space
 
@@ -53,43 +51,54 @@ There are no site-specific action scripts or prepared field strings in the polic
 ## Try it
 
 ```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
-cd jev-ultrafast
-uv sync
+git clone https://github.com/syncretic-cc/jev-ultrafast-typescript.git
+cd jev-ultrafast-typescript
 cp .env.example .env
 # Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
-uv run jev
+deno task demo
 ```
+
+Requires Deno 2.9+ and Chrome.
 
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
 
-Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
+### Connect Chrome
+
+Jev talks to Chrome through a small built-in DevTools Protocol client; there is nothing else to install. Its discovery order follows [Browser Harness](https://github.com/browser-use/browser-harness):
+
+1. `BU_CDP_WS`: a full `ws://…/devtools/browser/…` URL.
+2. `BU_CDP_URL`: an HTTP endpoint such as `http://127.0.0.1:9222`, for a dedicated automation Chrome started with `--remote-debugging-port=9222 --user-data-dir=<separate-profile>`.
+3. Your everyday Chrome: open `chrome://inspect/#remote-debugging` and allow remote debugging. Jev finds the `DevToolsActivePort` file in the usual Chrome, Chromium, Edge, and Brave profile folders. Accept Chrome's *Allow remote debugging* prompt when it appears.
+4. Ports 9222 and 9223 on 127.0.0.1.
+
+Empty variables count as unset. Jev opens its own background tab and closes it at the end; that tab shares the connected Chrome profile, including its cookies and signed-in accounts.
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
 ## Use the library
 
-```python
-from jev_ultrafast import Agent
+```ts
+import { Agent } from "./src/mod.ts";
 
-with Agent(
-    "https://www.google.com/travel/flights?hl=en",
-    "Find one-way flights from Zurich to London on September 20, 2026, "
+await using agent = await Agent.create(
+  "https://www.google.com/travel/flights?hl=en",
+  "Find one-way flights from Zurich to London on September 20, 2026, " +
     "for one adult in economy. Stop when matching flight options are visible.",
-) as agent:
-    for state in agent.run():
-        print(state["elapsed_ms"], state["status"])
+);
+for await (const state of agent.run()) {
+  console.log(state.elapsed_ms, state.status);
+}
 ```
 
-Run with `uv run --env-file .env python your_script.py`. The same policy can run a different task:
+Run with `deno run --env-file=.env --allow-net --allow-read --allow-env your_script.ts`. `await using` closes the tab when the block ends. The same policy can run a different task:
 
 ```bash
-uv run --env-file .env python examples/run.py \
+deno task example \
   --url https://en.wikipedia.org/wiki/Main_Page \
   --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
 ```
 
-`uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
+`deno task flights --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
 ## Why it moves
 
@@ -108,34 +117,36 @@ Every executed target is resolved from an observed node. The executor rechecks p
 
 | File | Job |
 | --- | --- |
-| [agent.py](jev_ultrafast/agent.py) | The complete loop and text-helper handoff |
-| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
-| [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
-| [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
-| [questions.py](jev_ultrafast/questions.py) | Model instructions |
-| [demo.py](jev_ultrafast/demo.py) | Local inspector |
+| [agent.ts](src/agent.ts) | The complete loop and text-helper handoff |
+| [snapshot.js](src/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
+| [browser.ts](src/browser.ts) | Tab ownership, current geometry, execution |
+| [cdp.ts](src/cdp.ts) | Chrome DevTools connection and discovery |
+| [model.ts](src/model.ts) | Dynamic operation/target heads and text generation |
+| [questions.ts](src/questions.ts) | Model instructions |
+| [demo.ts](src/demo.ts) | Local inspector |
 
 ## Evidence and limits
+
+> [!NOTE]
+> Every measurement, recording, and source hash below comes from the prior Python implementation (last Python commit [`1231850`](https://github.com/syncretic-cc/jev-ultrafast-typescript/tree/1231850)). They were not re-recorded for this TypeScript port. The raw evidence in [docs/](docs/) is unchanged, so its source hashes name Python files. The committed media ([demo.mp4](docs/demo.mp4), [demo.gif](docs/demo.gif), and [flights-result.png](docs/flights-result.png)) were rendered by the prior Python renderer and have not been re-rendered with `scripts/render_demo.ts`.
 
 The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
 
 In six alternating runs with identical models and settings, both versions passed **3/3**. Median task time went from **9.450 s → 7.092 s**, a **25% reduction**; median browser protocol calls went from **1,092 → 101**. This is three repeats of one task on one browser profile, not a general reliability benchmark.
 
-The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
+The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, Python source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
 ## Development
 
 ```bash
-uv run ruff check .
-uv run pytest
-node --check jev_ultrafast/static/app.js
-node --check jev_ultrafast/snapshot.js
-uv build
+deno task check
 ```
 
-Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+That runs `deno install --frozen`, `deno fmt --check`, `deno lint`, `deno check` (including `src/snapshot.js` and `src/static/app.js`), `deno test --allow-read`, and `deno publish --dry-run`.
+
+Tests are offline and need no credentials. `deno task guards` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `deno task record artifacts/flights/<new-folder>` captures original browser timestamps; the folder must be new and under `artifacts/`, since tasks may only write there (the same applies to `deno task flights --output` and `deno task measure --output`); `deno task render <recording-folder>` renders that verified run at 1× and crops out the Google account strip (rendering needs `ffmpeg` on `PATH`). Credentials and raw traces stay ignored.
 
 ---
 
