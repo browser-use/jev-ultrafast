@@ -320,6 +320,7 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
 
+
 def test_health_state_reports_browser_ready(monkeypatch):
     monkeypatch.setattr(demo, "daemon_alive", lambda: True)
     monkeypatch.setattr(demo, "cdp", lambda method: {"product": "Chrome"} if method == "Browser.getVersion" else {})
@@ -331,6 +332,7 @@ def test_health_state_reports_browser_ready(monkeypatch):
         "chrome_error": None,
     }
 
+
 def test_health_state_reports_missing_harness(monkeypatch):
     monkeypatch.setattr(demo, "daemon_alive", lambda: False)
 
@@ -340,6 +342,7 @@ def test_health_state_reports_missing_harness(monkeypatch):
         "chrome": False,
         "chrome_error": None,
     }
+
 
 def test_health_state_reports_cdp_failure(monkeypatch):
     monkeypatch.setattr(demo, "daemon_alive", lambda: True)
