@@ -1,5 +1,8 @@
 # Faster on the real web
 
+> [!NOTE]
+> These measurements and the recording come from the prior Python implementation (last Python commit `1231850`). They were not re-measured for the TypeScript port. The raw evidence files are unchanged, so their `source_hashes` name Python files; `scripts/measure_flights.ts` can only compare TypeScript revisions with each other.
+
 The current video completes the Google Flights task in **7.073 seconds at 1×**. It starts with one natural-language goal and uses dynamic controls throughout. Jev selects operation + target in one request; Mercury generates the city strings when TYPE_TEXT is selected.
 
 [Video](demo.mp4) · [Recording measurements](flights-measurement.json) · [Matched run measurements](full-speed-measurement.json)
@@ -17,7 +20,7 @@ Six alternating runs, one task, one existing Chrome profile. Both arms used the 
 
 The optimized runtime was faster in all three pairs. Median task time was **25.0% lower**, median TypeSafe requests fell **22 → 17**, and median browser protocol calls fell **1,092 → 101**. Three pairs are too few for a strong statistical claim (two-sided sign-test p = 0.25). This is a small controlled-input comparison, not a broad agent benchmark; Google, network responses, routing, and browser caches remain live.
 
-The original arm is the frozen source from `68c077bf79caca4e817b8e8a5854b2efa0c81ff6`. Both arms use Mercury so the runtime comparison does not conflate a helper-model change with code changes. Per-run source hashes, model settings, token counts, helper costs, browser version, protocol counts, and verification results are in the measurement JSON.
+The original arm is the frozen source from `68c077bf79caca4e817b8e8a5854b2efa0c81ff6`. Both arms use Mercury so the runtime comparison does not conflate a helper-model change with code changes. Per-run Python source hashes, model settings, token counts, helper costs, browser version, protocol counts, and verification results are in the measurement JSON.
 
 ## Where the time went
 
@@ -48,7 +51,7 @@ Before freezing the candidate, the original runtime passed once in 9.302 s. Two 
 
 A six-call helper probe used the two real flight-field contexts with Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite, and Mercury 2.5. All returned the correct values in this tiny probe. Mercury then passed the live Flights, Wikipedia, and local filter checks. This does not establish general semantic accuracy. Earlier probes had rejected a model that swapped origin/destination and another that emitted commentary instead of valid JSON.
 
-The previous 11.387-second recording and post-recording 12.898-second policy regression are described in the [original performance report](https://github.com/browser-use/jev-ultrafast/blob/68c077bf79caca4e817b8e8a5854b2efa0c81ff6/docs/performance.md). The older prepared-step prototype remains in [performance-prepared.md](performance-prepared.md). Raw attempts and original-timestamp frames remain in ignored local artifacts.
+The previous 11.387-second recording and post-recording 12.898-second policy regression are described in the [original performance report](https://github.com/syncretic-cc/jev-ultrafast-typescript/blob/68c077bf79caca4e817b8e8a5854b2efa0c81ff6/docs/performance.md). The older prepared-step prototype remains in [performance-prepared.md](performance-prepared.md). Raw attempts and original-timestamp frames remain in ignored local artifacts.
 
 ## Limits
 
