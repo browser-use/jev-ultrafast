@@ -69,6 +69,7 @@ def command(name, body):
         AGENT.command(name, body)
     return response_state()
 
+
 def health_state():
     harness = daemon_alive()
     chrome = False
@@ -78,7 +79,7 @@ def health_state():
         try:
             cdp("Browser.getVersion")
             chrome = True
-        except (RuntimeError, TimeoutError) as error:
+        except Exception as error:
             chrome_error = str(error)
 
     return {
@@ -87,6 +88,7 @@ def health_state():
         "chrome": chrome,
         "chrome_error": chrome_error,
     }
+
 
 class Handler(BaseHTTPRequestHandler):
     def send(self, status, content, mime="application/json"):
