@@ -40,7 +40,7 @@ function controls() {
   $("auto").disabled = busy || !live;
   $("auto").hidden = automatic;
   $("stop").hidden = !automatic;
-  $("download").disabled = !state?.history?.length;
+  $("download").disabled = !(state?.history?.length || state?.decisions?.length);
 }
 async function perform(fn, label) {
   if (busy) return;
