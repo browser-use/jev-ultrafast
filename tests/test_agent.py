@@ -396,9 +396,11 @@ def test_text_helper_gives_up_on_persistent_request_failure(monkeypatch):
     post = Mock(side_effect=RuntimeError("Model connection failed; no action executed."))
     monkeypatch.setattr(model, "post_json", post)
     monkeypatch.setattr(time, "sleep", lambda s: None)
-    with pytest.raises(ValueError, match="nothing typed"):
+    with pytest.raises(ValueError, match="nothing typed") as excinfo:
         model.field_text({"goal": "Find a flight"})
     assert post.call_count == 3
+    # The provider/request reason must survive in the final error for debugging.
+    assert "Request failed: Model connection failed; no action executed." in str(excinfo.value)
 
 
 def test_navigation_during_prediction_reobserves_without_action(runner):

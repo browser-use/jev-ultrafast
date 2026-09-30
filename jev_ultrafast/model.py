@@ -207,11 +207,13 @@ def field_text(context):
             value = output["text"]
             if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
                 raise ValueError()
-        except (RuntimeError, KeyError, IndexError, TypeError, ValueError):
+        except (RuntimeError, KeyError, IndexError, TypeError, ValueError) as exc:
             if attempt < 2:
                 time.sleep(0.5 * 2**attempt)
                 continue
-            detail = f" Response: {content!r}" if content is not None else ""
+            # Keep the provider/request reason (e.g. HTTP 401, connection
+            # failure) when no response body was ever received to debug from.
+            detail = f" Response: {content!r}" if content is not None else f" Request failed: {exc}"
             raise ValueError(f"Text helper returned no valid field value; nothing typed.{detail}") from None
         return value, {
             "model": model,
