@@ -3,8 +3,7 @@
 # Jev Ultrafast ⚡
 
 > [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
+> **Browser tasks for a fraction of a cent.** BU Ultrafast: **$0.00214 median recorded per URL check**, 8/8 correct in staging. LLM + stopped browser; traffic extra. [Details](https://browser-use.com/pricing#fast-modes) · [Join early access →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)
 
 **A browser agent with a dynamic, indexed action space.**
 
@@ -124,6 +123,10 @@ In six alternating runs with identical models and settings, both versions passed
 The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+
+## BU Ultrafast and BU Fast on Cloud
+
+Want it hosted? **BU Ultrafast** for focused tasks; **BU Fast** for more reasoning at half the token rates. [Cloud API v4 early access](https://docs.browser-use.com/cloud/agent/models), separate from this local Jev demo.
 
 ## Development
 
