@@ -735,3 +735,27 @@ textarea:focus-visible {
 }
 
 .operation-choices{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}.operation-choice{font-size:10px;padding:5px 7px;border:1px solid #dbe2d4;border-radius:5px;color:#687260}.operation-choice.best{color:#185c3b;background:#eef6e5;border-color:#88ac79}
+
+.preflight {
+  margin: 1rem 0 1.5rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.preflight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+}
+
+.preflight-row + .preflight-row {
+  border-top: 1px solid var(--line);
+}
+
+.preflight-row strong {
+  font-size: 0.9rem;
+}
