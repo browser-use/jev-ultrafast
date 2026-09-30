@@ -1,4 +1,21 @@
 const $ = (id) => document.getElementById(id);
+const themeToggle = $("theme-toggle");
+const savedTheme = localStorage.getItem("demo-theme");
+
+if (savedTheme === "dark") {
+  document.documentElement.dataset.theme = "dark";
+  themeToggle.setAttribute("aria-pressed", "true");
+  themeToggle.textContent = "Light mode";
+}
+
+themeToggle.addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  themeToggle.setAttribute("aria-pressed", String(dark));
+  themeToggle.textContent = dark ? "Light mode" : "Dark mode";
+  localStorage.setItem("demo-theme", dark ? "dark" : "light");
+});
 const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
   busy = false,
