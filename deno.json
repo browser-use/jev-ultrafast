@@ -1,0 +1,47 @@
+{
+  "name": "@syncretic/jev-ultrafast",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": "./src/mod.ts",
+  "imports": {
+    "@typesafe-ai/sdk": "npm:@typesafe-ai/sdk@0.6.0",
+    "@resvg/resvg-js": "npm:@resvg/resvg-js@^2.6.2",
+    "@std/assert": "jsr:@std/assert@^1",
+    "@std/async": "jsr:@std/async@^1",
+    "@std/cli": "jsr:@std/cli@^1",
+    "@std/encoding": "jsr:@std/encoding@^1",
+    "@std/path": "jsr:@std/path@^1",
+    "@std/testing": "jsr:@std/testing@^1"
+  },
+  "tasks": {
+    "demo": "deno run --allow-net --allow-read --allow-env --allow-write=artifacts src/demo.ts",
+    "example": "deno run --env-file=.env --allow-net --allow-read --allow-env examples/run.ts",
+    "flights": "deno run --env-file=.env --allow-net --allow-read --allow-env --allow-write=artifacts examples/flights.ts",
+    "guards": "deno run --allow-net --allow-read --allow-env scripts/check_guards.ts",
+    "smoke": "deno run --allow-net --allow-read --allow-env --allow-write=artifacts scripts/smoke.ts",
+    "measure": "deno run --env-file=.env --allow-net --allow-read --allow-env --allow-write=artifacts scripts/measure_flights.ts",
+    "record": "deno run --env-file=.env --allow-net --allow-read --allow-env --allow-write=artifacts scripts/record_flights.ts",
+    "render": "deno run --allow-read --allow-write --allow-env --allow-ffi --allow-sys --allow-run=ffmpeg scripts/render_demo.ts",
+    "render:fixture": "deno run --allow-read --allow-write --allow-env --allow-ffi --allow-sys --allow-run=ffmpeg scripts/render_fixture.ts",
+    "test": "deno test --allow-read",
+    "check": "deno fmt --check && deno lint && deno check src tests examples scripts src/snapshot.js src/static/app.js && deno test --allow-read && deno publish --dry-run --allow-dirty"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true
+  },
+  "fmt": {
+    "lineWidth": 120,
+    "include": ["src/", "tests/", "examples/", "scripts/", "deno.json"],
+    "exclude": ["src/snapshot.js", "src/static/"]
+  },
+  "lint": {
+    "include": ["src/", "tests/", "examples/", "scripts/"],
+    "exclude": ["src/snapshot.js", "src/static/"]
+  },
+  "publish": {
+    "include": ["src/", "README.md", "LICENSE"]
+  }
+}
