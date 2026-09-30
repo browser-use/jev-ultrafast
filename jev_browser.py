@@ -1,5 +1,7 @@
 """Launcher: ensure a debuggable Edge instance, point browser-harness at it, run the jev demo.
 
+Leaving the demo (Ctrl+C) also closes the debug instance -- but only the one this launcher started.
+
 Usage:
   uv run python jev_browser.py            # start the demo server (same as `uv run jev`)
   uv run python jev_browser.py exec ...   # run any command with BU_CDP_WS set
@@ -38,8 +40,9 @@ def version_info():
 def ensure_browser():
     info = version_info()
     if info:
-        return info
-    subprocess.Popen(
+        # An instance this launcher did not start is left up on purpose: whoever started it owns its shutdown.
+        return info, None
+    proc = subprocess.Popen(
         [EDGE, f"--remote-debugging-port={PORT}", f"--user-data-dir={PROFILE}",
          "--no-first-run", "--no-default-browser-check", "--disable-gpu",
          f"--proxy-server={PROXY}", "about:blank"],
@@ -48,12 +51,40 @@ def ensure_browser():
     for _ in range(15):
         time.sleep(1)
         if (info := version_info()):
-            return info
+            return info, proc
     sys.exit(f"Edge debug instance on port {PORT} did not come up")
 
 
+def close_instance(url):
+    """Ask Edge to exit itself, so it flushes .edge-profile instead of dying mid-write."""
+    from websockets.exceptions import WebSocketException
+    from websockets.sync.client import connect
+
+    try:
+        with connect(url, max_size=None) as ws:
+            ws.send(json.dumps({"id": 1, "method": "Browser.close"}))
+    except (OSError, WebSocketException):
+        # The socket goes down with the browser; whether it worked is judged by the port, not here.
+        pass
+
+
+def leave(info, proc):
+    if proc is None:
+        print(f"Left the Edge instance on port {PORT} up; this launcher did not start it.", flush=True)
+        return
+    close_instance(info["webSocketDebuggerUrl"])
+    for _ in range(10):
+        time.sleep(0.5)
+        if not port_busy(PORT):
+            print(f"Edge debug instance on port {PORT} closed.", flush=True)
+            return
+    # Still listening means the polite request never landed, so stop the process we started ourselves.
+    proc.terminate()
+    print(f"Edge still held port {PORT}, sent terminate() to the instance this launcher started.", flush=True)
+
+
 def main():
-    info = ensure_browser()
+    info, proc = ensure_browser()
     os.environ["BU_CDP_WS"] = info["webSocketDebuggerUrl"]
     # The model leg needs the same egress as the browser; setting it here keeps a bare restart working.
     os.environ.setdefault("HTTPS_PROXY", PROXY)
@@ -61,13 +92,16 @@ def main():
     print(f"BU_CDP_WS={os.environ['BU_CDP_WS']}")
     if len(sys.argv) > 1 and sys.argv[1] == "exec":
         sys.exit(subprocess.run(sys.argv[2:], env=os.environ).returncode)
-    if port_busy(DEMO_PORT):
-        sys.exit(
-            f"Port {DEMO_PORT} already serves a demo panel. Each process mints its own token, so a "
-            "second one makes the panel fail at random -- stop the first instead."
-        )
-    from jev_ultrafast.demo import main as demo_main
-    demo_main()
+    try:
+        if port_busy(DEMO_PORT):
+            sys.exit(
+                f"Port {DEMO_PORT} already serves a demo panel. Each process mints its own token, so a "
+                "second one makes the panel fail at random -- stop the first instead."
+            )
+        from jev_ultrafast.demo import main as demo_main
+        demo_main()
+    finally:
+        leave(info, proc)
 
 
 if __name__ == "__main__":
