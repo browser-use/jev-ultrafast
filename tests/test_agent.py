@@ -350,11 +350,55 @@ def test_text_helper_retries_malformed_sample(monkeypatch):
 def test_text_helper_reports_response_after_retries(monkeypatch):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     bad = {"choices": [{"message": {"content": '{"text": 123}'}}]}
-    monkeypatch.setattr(model, "post_json", Mock(return_value=bad))
+    post = Mock(return_value=bad)
+    monkeypatch.setattr(model, "post_json", post)
     monkeypatch.setattr(time, "sleep", lambda s: None)
     with pytest.raises(ValueError, match="nothing typed") as excinfo:
         model.field_text({"goal": "Find a flight"})
     assert repr('{"text": 123}') in str(excinfo.value)
+    assert post.call_count == 3
+
+
+def test_text_helper_recovers_after_request_failure(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    responses = [
+        RuntimeError("Model connection failed; no action executed."),
+        {"choices": [{"message": {"content": '{"text": "Zurich"}'}}]},
+    ]
+
+    def flaky(*a, **k):
+        outcome = responses.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    post = Mock(side_effect=flaky)
+    monkeypatch.setattr(model, "post_json", post)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    value, _meta = model.field_text({"goal": "Find a flight"})
+    assert value == "Zurich"
+    assert post.call_count == 2
+    assert not responses
+
+
+def test_text_helper_rejects_structurally_malformed_response(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": []})
+    monkeypatch.setattr(model, "post_json", post)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    with pytest.raises(ValueError, match="nothing typed"):
+        model.field_text({"goal": "Find a flight"})
+    assert post.call_count == 3
+
+
+def test_text_helper_gives_up_on_persistent_request_failure(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(side_effect=RuntimeError("Model connection failed; no action executed."))
+    monkeypatch.setattr(model, "post_json", post)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    with pytest.raises(ValueError, match="nothing typed"):
+        model.field_text({"goal": "Find a flight"})
+    assert post.call_count == 3
 
 
 def test_navigation_during_prediction_reobserves_without_action(runner):

@@ -180,36 +180,39 @@ def field_text(context):
         reasoning = {"reasoning": {"enabled": False}}
     started = time.perf_counter()
     for attempt in range(3):
-        result = post_json(
-            base + "/chat/completions",
-            key,
-            {
-                "model": model,
-                "max_tokens": 1024,
-                "response_format": {"type": "json_object"},
-                **reasoning,
-                "messages": [
-                    {"role": "system", "content": TEXT_VALUE},
-                    {
-                        "role": "user",
-                        "content": json.dumps(context),
-                    },
-                ],
-            },
-        )
-        content = result["choices"][0]["message"]["content"]
+        content = None
         try:
+            result = post_json(
+                base + "/chat/completions",
+                key,
+                {
+                    "model": model,
+                    "max_tokens": 1024,
+                    "response_format": {"type": "json_object"},
+                    **reasoning,
+                    "messages": [
+                        {"role": "system", "content": TEXT_VALUE},
+                        {
+                            "role": "user",
+                            "content": json.dumps(context),
+                        },
+                    ],
+                },
+            )
+            # Request failures (RuntimeError from post_json) and structurally
+            # malformed 200s (missing choices/message/content) are retried too:
+            # both are transient provider failures, not verdicts on the task.
+            content = result["choices"][0]["message"]["content"]
             output = json.loads(_strip_code_fences(content))
             value = output["text"]
             if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
                 raise ValueError()
-        except (ValueError, KeyError, TypeError):
+        except (RuntimeError, KeyError, IndexError, TypeError, ValueError):
             if attempt < 2:
                 time.sleep(0.5 * 2**attempt)
                 continue
-            raise ValueError(
-                f"Text helper returned no valid field value; nothing typed. Response: {content!r}"
-            ) from None
+            detail = f" Response: {content!r}" if content is not None else ""
+            raise ValueError(f"Text helper returned no valid field value; nothing typed.{detail}") from None
         return value, {
             "model": model,
             "latency_ms": round((time.perf_counter() - started) * 1000),
