@@ -1,0 +1,19 @@
+README.md
+  s_d394f711720c51::t_d8a26cddc8b913 6,129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03be1f553079f6e209211817a93e63ef2950993a",
+  "prompts": {},
+  "sessions": {
+    "s_d394f711720c51": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee80-a0fd-7822-8caa-bfac8d83ed93",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gregor Žunič <36313686+gregpr07@users.noreply.github.com>"
+    }
+  }
+}
