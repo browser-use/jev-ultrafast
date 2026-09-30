@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -169,6 +169,7 @@ source = { editable = "." }
 dependencies = [
     { name = "browser-harness" },
     { name = "httpx", extra = ["http2"] },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -182,6 +183,7 @@ dev = [
 requires-dist = [
     { name = "browser-harness", specifier = "==0.1.13" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.28,<1" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [package.metadata.requires-dev]
