@@ -30,6 +30,7 @@
   --text-muted: #b6b9ae;
   --text-subtle: #969b8f;
   --line: rgb(255 255 255 / 0.11);
+  color-scheme: dark;
 }
 * {
   box-sizing: border-box;
