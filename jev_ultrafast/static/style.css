@@ -11,6 +11,7 @@
   --surface: #ffffff;
   --surface-muted: #f9f9f5;
   --surface-soft: #f1f3ec;
+  --surface-hover: #f2f3ed;
   --text: #252523;
   --text-muted: #77776e;
   --text-subtle: #92958a;
@@ -24,6 +25,7 @@
   --surface: #20211e;
   --surface-muted: #262824;
   --surface-soft: #2c2f29;
+  --surface-hover: #2c2f29;
   --text: #f0f1eb;
   --text-muted: #b6b9ae;
   --text-subtle: #969b8f;
@@ -103,7 +105,7 @@ main {
     11px ui-monospace,
     monospace;
   letter-spacing: 1.7px;
-  color: #77796f;
+  color: var(--text-muted);
   margin: 0 0 10px;
 }
 h1 {
@@ -126,7 +128,7 @@ p {
 }
 .intro p:last-child {
   margin: 12px 0 0;
-  color: #77776e;
+  color: var(--text-muted);
 }
 .model-tag {
   white-space: nowrap;
@@ -203,7 +205,7 @@ button {
   transition: transform 0.14s;
 }
 button:hover {
-  background: #f2f3ed;
+  background: var(--surface-hover);
 }
 button:active {
   transform: scale(0.96);
@@ -295,7 +297,7 @@ a:focus-visible {
   font:
     11px ui-monospace,
     monospace;
-  color: #777b70;
+  color: var(--text-muted);
 }
 .live {
   font:
@@ -349,7 +351,7 @@ a:focus-visible {
   font:
     10px ui-monospace,
     monospace;
-  color: #818577;
+  color: var(--text-subtle);
 }
 .target {
   position: absolute;
@@ -460,7 +462,7 @@ aside {
   isolation: isolate;
 }
 .choice.best {
-  background: #f0f5ec;
+  background: var(--surface-soft);
   border-radius: 5px;
   border-color: transparent;
 }
@@ -537,7 +539,7 @@ aside {
   color: #929586;
 }
 .trace-row .time {
-  color: #81897a;
+  color: var(--text-subtle);
   font:
     11px ui-monospace,
     monospace;
@@ -559,7 +561,7 @@ aside {
 details {
   border-top: 1px solid var(--line);
   padding-top: 16px;
-  color: #737b68;
+  color: var(--text-muted);
   font-size: 12px;
 }
 summary {
@@ -763,4 +765,4 @@ textarea:focus-visible {
   }
 }
 
-.operation-choices{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}.operation-choice{font-size:10px;padding:5px 7px;border:1px solid #dbe2d4;border-radius:5px;color:#687260}.operation-choice.best{color:#185c3b;background:#eef6e5;border-color:#88ac79}
+.operation-choices{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}.operation-choice{font-size:10px;padding:5px 7px;border:1px solid #dbe2d4;border-radius:5px;color:var(--text-muted)}.operation-choice.best{color:#185c3b;background:#eef6e5;border-color:#88ac79}

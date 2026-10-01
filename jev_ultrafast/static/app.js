@@ -1,11 +1,16 @@
 const $ = (id) => document.getElementById(id);
 const themeToggle = $("theme-toggle");
-const savedTheme = localStorage.getItem("demo-theme");
+let savedTheme = null;
+
+try {
+  savedTheme = localStorage.getItem("demo-theme");
+} catch {
+  /* Theme persistence is optional. */
+}
 
 if (savedTheme === "dark") {
   document.documentElement.dataset.theme = "dark";
   themeToggle.setAttribute("aria-pressed", "true");
-  themeToggle.textContent = "Light mode";
 }
 
 themeToggle.addEventListener("click", () => {
@@ -13,8 +18,11 @@ themeToggle.addEventListener("click", () => {
 
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   themeToggle.setAttribute("aria-pressed", String(dark));
-  themeToggle.textContent = dark ? "Light mode" : "Dark mode";
-  localStorage.setItem("demo-theme", dark ? "dark" : "light");
+  try {
+    localStorage.setItem("demo-theme", dark ? "dark" : "light");
+  } catch {
+    /* Keep the current theme even if persistence is unavailable. */
+  }
 });
 const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
