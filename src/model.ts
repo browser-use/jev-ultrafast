@@ -298,30 +298,50 @@ export function fieldContext(
   };
 }
 
+/** True when `USE_OPENAI` switches the text helper to OpenAI's own Chat Completions API. */
+const useOpenAI = (opts: ModelOptions): boolean =>
+  ["1", "true", "yes", "on"].includes((readEnv(opts, "USE_OPENAI") ?? "").trim().toLowerCase());
+
+/** The text helper's model name, for display. */
+export const textModel = (opts: ModelOptions = {}): string =>
+  useOpenAI(opts) ? readEnv(opts, "OPENAI_MODEL") || "gpt-6-luna" : readEnv(opts, "TEXT_MODEL") ?? "deepseek-chat";
+
 /** Ask the text LLM for one field value. Returns `[text, helper]`. Nothing is hardcoded or guessed. */
 export async function fieldText(
   context: FieldContext | Record<string, unknown>,
   opts: ModelOptions = {},
 ): Promise<[text: string, helper: TextHelperInfo]> {
-  const key = readEnv(opts, "TEXT_MODEL_API_KEY");
+  const openai = useOpenAI(opts);
+  const keyName = openai ? "OPENAI_API_KEY" : "TEXT_MODEL_API_KEY";
+  const key = readEnv(opts, keyName);
   if (!key) {
-    throw new JevError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.");
+    throw new JevError(`TYPE_TEXT needs ${keyName}; no text is hardcoded or guessed by the executor.`);
   }
-  const base = (readEnv(opts, "TEXT_MODEL_BASE_URL") ?? "https://api.deepseek.com/v1").replace(/\/+$/, "");
-  const model = readEnv(opts, "TEXT_MODEL") ?? "deepseek-chat";
-  let reasoning: Record<string, unknown> = base.includes("api.deepseek.com/")
-    ? { thinking: { type: "disabled" } }
-    : { reasoning: { effort: "low" } };
-  if (readEnv(opts, "TEXT_MODEL_REASONING") === "none") reasoning = { reasoning: { enabled: false } };
+  const model = textModel(opts);
+  let base: string;
+  // OpenAI's Chat Completions takes `max_completion_tokens` and a top-level `reasoning_effort`.
+  let limits: Record<string, unknown>;
+  if (openai) {
+    base = "https://api.openai.com/v1";
+    limits = {
+      max_completion_tokens: 1024,
+      reasoning_effort: readEnv(opts, "OPENAI_REASONING_EFFORT") || "none",
+    };
+  } else {
+    base = (readEnv(opts, "TEXT_MODEL_BASE_URL") ?? "https://api.deepseek.com/v1").replace(/\/+$/, "");
+    limits = base.includes("api.deepseek.com/")
+      ? { max_tokens: 1024, thinking: { type: "disabled" } }
+      : { max_tokens: 1024, reasoning: { effort: "low" } };
+    if (readEnv(opts, "TEXT_MODEL_REASONING") === "none") limits = { max_tokens: 1024, reasoning: { enabled: false } };
+  }
   const started = performance.now();
   const result = await postJson(
     base + "/chat/completions",
     key,
     {
       model,
-      max_tokens: 1024,
       response_format: { type: "json_object" },
-      ...reasoning,
+      ...limits,
       messages: [
         { role: "system", content: TEXT_VALUE },
         { role: "user", content: pythonJsonDumps(context) },

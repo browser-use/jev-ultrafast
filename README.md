@@ -54,7 +54,7 @@ There are no site-specific action scripts or prepared field strings in the polic
 git clone https://github.com/syncretic-cc/jev-ultrafast-typescript.git
 cd jev-ultrafast-typescript
 cp .env.example .env
-# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
+# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY (or USE_OPENAI=true and OPENAI_API_KEY).
 deno task demo
 ```
 
@@ -74,6 +74,8 @@ Jev talks to Chrome through a small built-in DevTools Protocol client; there is 
 Empty variables count as unset. Jev opens its own background tab and closes it at the end; that tab shares the connected Chrome profile, including its cookies and signed-in accounts.
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
+
+To use OpenAI directly, set `USE_OPENAI=true` and `OPENAI_API_KEY`. TYPE_TEXT then calls `https://api.openai.com/v1/chat/completions` with `OPENAI_MODEL` (default `gpt-6-luna`) and `OPENAI_REASONING_EFFORT` (default `none`), and ignores the `TEXT_MODEL_*` settings. TypeSafe still chooses every action.
 
 ## Use the library
 

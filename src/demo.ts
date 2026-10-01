@@ -6,6 +6,7 @@ import { Agent } from "./agent.ts";
 import { acquireCdp, type CdpLease } from "./cdp.ts";
 import { loadEnvironment } from "./env.ts";
 import { JevError } from "./errors.ts";
+import { textModel } from "./model.ts";
 import { MAX_STEPS } from "./questions.ts";
 
 const STATIC: Record<string, [string, string]> = {
@@ -37,7 +38,7 @@ export async function main(): Promise<void> {
 
   const responseState = () => {
     const state = agent ? agent.snapshot() : { page: null, status: "idle", history: [], decision: null };
-    return { ...state, text_model: Deno.env.get("TEXT_MODEL") ?? "deepseek-chat", max_steps: MAX_STEPS };
+    return { ...state, text_model: textModel(), max_steps: MAX_STEPS };
   };
 
   const closeBrowser = async () => {

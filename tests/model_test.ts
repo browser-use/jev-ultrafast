@@ -227,6 +227,46 @@ for (const content of ["Thinking: Zurich", '{"text":null}', '{"text":"Zurich","e
   });
 }
 
+Deno.test("OpenAI mode sends Chat Completions fields with the OpenAI key", async () => {
+  const fetch = fakeFetch(() => textReply('{"text":"Zurich"}'));
+  const env = { USE_OPENAI: "true", OPENAI_API_KEY: "sk-test", TEXT_MODEL_API_KEY: "other", TEXT_MODEL: "ignored" };
+  const [text, helper] = await fieldText({ goal: "Fly from Zurich" }, { fetch, env });
+  assertEquals(text, "Zurich");
+  assertEquals(helper.model, "gpt-6-luna");
+  assertEquals(fetch.calls[0].url, "https://api.openai.com/v1/chat/completions");
+  assertEquals(fetch.calls[0].headers.get("authorization"), "Bearer sk-test");
+  const body = fetch.calls[0].body as Json;
+  assertEquals(body.max_completion_tokens, 1024);
+  assertEquals(body.reasoning_effort, "none");
+  assertEquals(body.response_format, { type: "json_object" });
+  assert(!("max_tokens" in body) && !("reasoning" in body) && !("thinking" in body));
+});
+
+Deno.test("OpenAI mode honours model and effort overrides", async () => {
+  const fetch = fakeFetch(() => textReply('{"text":"Zurich"}'));
+  const env = { USE_OPENAI: "1", OPENAI_API_KEY: "k", OPENAI_MODEL: "gpt-5.5", OPENAI_REASONING_EFFORT: "low" };
+  await fieldText({ goal: "Fly" }, { fetch, env });
+  const body = fetch.calls[0].body as Json;
+  assertEquals([body.model, body.reasoning_effort], ["gpt-5.5", "low"]);
+});
+
+Deno.test("OpenAI mode without OPENAI_API_KEY stops before any request", async () => {
+  const fetch = fakeFetch(() => textReply('{"text":"Zurich"}'));
+  await assertRejects(
+    () => fieldText({ goal: "Fly" }, { fetch, env: { USE_OPENAI: "true", TEXT_MODEL_API_KEY: "other" } }),
+    JevError,
+    "OPENAI_API_KEY",
+  );
+  assertEquals(fetch.calls.length, 0);
+});
+
+Deno.test("USE_OPENAI=false keeps the OpenAI-compatible helper", async () => {
+  const fetch = fakeFetch(() => textReply('{"text":"Zurich"}'));
+  await fieldText({ goal: "Fly" }, { fetch, env: { ...TEXT, USE_OPENAI: "false", OPENAI_API_KEY: "k" } });
+  assertEquals(fetch.calls[0].url, "https://api.deepseek.com/v1/chat/completions");
+  assertEquals((fetch.calls[0].body as Json).max_tokens, 1024);
+});
+
 // --- postJson ---------------------------------------------------------------------------------------------------
 
 Deno.test("postJson retries 429/503/529 with backoff, then returns JSON", async () => {

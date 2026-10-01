@@ -76,7 +76,15 @@ try {
   // Serialised like Python's json.dumps for these ASCII strings, so the hash matches the Python arm.
   state.task_hash = await sha256(`[${JSON.stringify(URL)}, ${JSON.stringify(GOALS)}]`);
   state.configuration = Object.fromEntries(
-    ["TYPESAFE_MODEL", "TEXT_MODEL", "TEXT_MODEL_BASE_URL", "TEXT_MODEL_REASONING"].map((key) => [
+    [
+      "TYPESAFE_MODEL",
+      "TEXT_MODEL",
+      "TEXT_MODEL_BASE_URL",
+      "TEXT_MODEL_REASONING",
+      "USE_OPENAI",
+      "OPENAI_MODEL",
+      "OPENAI_REASONING_EFFORT",
+    ].map((key) => [
       key,
       Deno.env.get(key) ?? null,
     ]),
