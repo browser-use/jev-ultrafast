@@ -32,11 +32,11 @@ class Browser:
                 if self.evaluate("document.readyState") == "complete":
                     break
                 time.sleep(0.02)
-        except Exception as error:
-            # A failed constructor cannot hand its owned tab to the caller for cleanup.
+        except BaseException as error:
+            # Failed or interrupted construction cannot hand its owned tab to the caller for cleanup.
             try:
                 self.close()
-            except Exception as cleanup_error:
+            except BaseException as cleanup_error:
                 error.add_note(f"Failed to close the owned browser tab: {cleanup_error}")
             raise
 
