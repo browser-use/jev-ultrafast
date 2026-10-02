@@ -1,6 +1,5 @@
 import base64
 import importlib.util
-import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,9 +16,11 @@ class FakeBrowser:
 
     def __init__(self):
         self.calls = []
+        self.events = []
 
     def call(self, method, **kwargs):
         self.calls.append(method)
+        self.events.append(method)
         if method == "Page.captureScreenshot":
             return {"data": base64.b64encode(b"jpeg").decode()}
         return {}
@@ -29,10 +30,11 @@ class FakeBrowser:
 
 
 class FakeAgent:
-    def __init__(self, _url, _goal, *, run_error=None, snapshot_error=None):
+    def __init__(self, _url, _goal, *, run_error=None, snapshot_error=None, artifact_folder=None):
         self.browser = FakeBrowser()
         self.run_error = run_error
         self.snapshot_error = snapshot_error
+        self.artifact_folder = artifact_folder
         self.closed = 0
 
     def run(self):
@@ -47,6 +49,24 @@ class FakeAgent:
 
     def close(self):
         self.closed += 1
+        self.browser.events.append("agent.close")
+        if self.artifact_folder:
+            assert (self.artifact_folder / "state.json").exists()
+            assert (self.artifact_folder / "session.json").exists()
+
+
+class FakeEvent:
+    def __init__(self):
+        self.stopped = False
+
+    def is_set(self):
+        return self.stopped
+
+    def set(self):
+        self.stopped = True
+
+    def wait(self, _timeout):
+        self.stopped = True
 
 
 class FakeThread:
@@ -55,9 +75,9 @@ class FakeThread:
         self.daemon = daemon
 
     def start(self):
-        pass
+        self.target()
 
-    def join(self, timeout):
+    def join(self, timeout=None):
         pass
 
 
@@ -71,23 +91,25 @@ def load_script():
 @pytest.mark.parametrize("run_error", [None, RuntimeError("run failed")])
 def test_recording_closes_agent_after_success_or_run_failure(monkeypatch, tmp_path, run_error):
     module = load_script()
-    agent = FakeAgent("url", "goal", run_error=run_error)
+    recording = tmp_path / "recording"
+    agent = FakeAgent("url", "goal", run_error=run_error, artifact_folder=recording)
     monkeypatch.setattr(jev_ultrafast, "Agent", lambda _url, _goal: agent)
     monkeypatch.setattr("examples.flights.verify", lambda _page: {"passed": True})
     monkeypatch.setattr(
         module,
         "threading",
-        SimpleNamespace(Event=threading.Event, Thread=FakeThread),
+        SimpleNamespace(Event=FakeEvent, Thread=FakeThread),
     )
 
     if run_error:
         with pytest.raises(RuntimeError, match="run failed"):
-            module.main([str(tmp_path / "recording")])
+            module.main([str(recording)])
     else:
-        module.main([str(tmp_path / "recording")])
+        module.main([str(recording)])
 
     assert agent.closed == 1
-    assert agent.browser.calls[-1] == "Page.stopScreencast"
+    assert agent.browser.events[-1] == "agent.close"
+    assert agent.browser.events.index("agent.close") > agent.browser.events.index("Page.stopScreencast")
 
 
 def test_recording_closes_agent_when_finalization_fails(monkeypatch, tmp_path):
@@ -98,7 +120,7 @@ def test_recording_closes_agent_when_finalization_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(
         module,
         "threading",
-        SimpleNamespace(Event=threading.Event, Thread=FakeThread),
+        SimpleNamespace(Event=FakeEvent, Thread=FakeThread),
     )
 
     with pytest.raises(RuntimeError, match="snapshot failed"):
