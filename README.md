@@ -127,6 +127,8 @@ A `DONE` choice still requires independent outcome verification. The DOM reader 
 
 ## Development
 
+A failed model call reports the HTTP status plus a short provider code such as `max_tokens_exceeded`, never the response body or credentials. A connection failure names the exception type, such as `ReadTimeout`. No browser action runs after a failed model call.
+
 ```bash
 uv run ruff check .
 uv run pytest
