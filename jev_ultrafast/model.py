@@ -52,7 +52,7 @@ def post_json(url, key, body):
                 url,
                 model_info,
                 req_info,
-                error_body,
+                "<provider response body omitted>",
             )
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
         return response.json()
