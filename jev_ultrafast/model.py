@@ -41,7 +41,7 @@ def provider_code(response):
         return None
     if not isinstance(payload, dict):
         return None
-    for key, fields in (("detail", ("error_type", "code")), ("error", ("code", "type"))):
+    for key, fields in (("detail", ("error_type",)), ("error", ("code", "type"))):
         error = payload.get(key)
         for field in fields if isinstance(error, dict) else ():
             code = error.get(field)

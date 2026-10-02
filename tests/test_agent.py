@@ -50,6 +50,7 @@ def decision(action="e1"):
     ({"detail": {"error_type": "max_tokens_exceeded"}}, r"HTTP 400 \(max_tokens_exceeded\);"),
     ({"detail": {"error_type": "authentication_error", "message": "secret value"}}, r"\(authentication_error\);"),
     ({"detail": "Too many choices. secret value"}, "HTTP 400;"),
+    ({"detail": {"code": "unlisted_detail_code"}}, "HTTP 400;"),
     ({"error": {"code": "max_tokens_exceeded"}}, "max_tokens_exceeded"),
     ({"error": {"code": 400, "type": "invalid_request_error"}}, "invalid_request_error"),
     ({"error": {"type": "invalid_api_key"}}, "invalid_api_key"),
