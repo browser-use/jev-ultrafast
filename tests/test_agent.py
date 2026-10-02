@@ -369,6 +369,16 @@ def test_blocked_after_a_click_does_not_wait_again(runner, monkeypatch):
     runner.state["browser"].wait_for_change.assert_not_called()
 
 
+def test_initial_blocked_waits_up_to_its_full_budget(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
+    runner.state["browser"].wait_for_change = Mock(return_value=False)
+
+    runner.command("tick")
+
+    timeout = runner.state["browser"].wait_for_change.call_args.args[1]
+    assert loop.INITIAL_BLOCKED_WAIT_SECONDS - 0.5 < timeout <= loop.INITIAL_BLOCKED_WAIT_SECONDS
+
+
 def test_initial_blocked_wait_budget_is_not_extended_by_page_changes(runner, monkeypatch):
     monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
     runner.state["browser"].wait_for_change = Mock(return_value=True)
