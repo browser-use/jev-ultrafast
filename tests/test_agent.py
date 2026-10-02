@@ -318,3 +318,85 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_initial_blocked_waits_for_new_controls_without_a_browser_action(runner, monkeypatch):
+    blocked = {**decision("BLOCKED"), "operation": "BLOCKED"}
+    click = {**decision("e3"), "operation": "CLICK"}
+    monkeypatch.setattr(loop, "choose", Mock(side_effect=[blocked, click]))
+    runner.state["browser"].wait_for_change = Mock(return_value=True)
+
+    runner.command("tick")
+    assert runner.state["status"] == "ready"
+    assert runner.state["history"] == []
+    runner.state["browser"].act.assert_not_called()
+
+    runner.command("tick")
+    assert runner.state["history"][0]["action"] == "Go"
+    runner.state["browser"].wait_for_change.assert_called_once()
+
+
+def test_initial_blocked_stops_when_page_remains_unchanged(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
+    runner.state["browser"].wait_for_change = Mock(return_value=False)
+
+    runner.command("tick")
+
+    assert runner.state["status"] == "blocked"
+    assert runner.state["history"] == []
+    runner.state["browser"].wait_for_change.assert_called_once()
+
+
+def test_initial_waits_do_not_confirm_a_blocked_page(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
+    runner.state["history"] = [{"kind": "wait"}]
+    runner.state["browser"].wait_for_change = Mock(return_value=True)
+
+    runner.command("tick")
+
+    assert runner.state["status"] == "ready"
+    runner.state["browser"].wait_for_change.assert_called_once()
+
+
+def test_blocked_after_a_click_does_not_wait_again(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
+    runner.state["history"] = [{"kind": "click"}]
+    runner.state["browser"].wait_for_change = Mock()
+
+    runner.command("tick")
+
+    assert runner.state["status"] == "blocked"
+    runner.state["browser"].wait_for_change.assert_not_called()
+
+
+def test_initial_blocked_waits_up_to_its_full_budget(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
+    runner.state["browser"].wait_for_change = Mock(return_value=False)
+
+    runner.command("tick")
+
+    timeout = runner.state["browser"].wait_for_change.call_args.args[1]
+    assert loop.INITIAL_BLOCKED_WAIT_SECONDS - 0.5 < timeout <= loop.INITIAL_BLOCKED_WAIT_SECONDS
+
+
+def test_initial_blocked_wait_budget_is_not_extended_by_page_changes(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("BLOCKED"), "operation": "BLOCKED"}))
+    runner.state["browser"].wait_for_change = Mock(return_value=True)
+    runner.command("tick")
+    runner.initial_blocked_deadline = time.monotonic() - 1
+
+    runner.command("tick")
+
+    assert runner.state["status"] == "blocked"
+    runner.state["browser"].wait_for_change.assert_called_once()
+
+
+def test_wait_for_change_detects_a_new_semantic_page(monkeypatch):
+    from jev_ultrafast.browser import Browser
+
+    browser = Browser.__new__(Browser)
+    browser.fresh = Mock(side_effect=[True, False])
+    monkeypatch.setattr("jev_ultrafast.browser.time.sleep", Mock())
+
+    assert browser.wait_for_change(page(), 1) is True
+    assert browser.fresh.call_count == 2

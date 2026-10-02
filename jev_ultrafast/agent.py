@@ -8,6 +8,9 @@ from .browser import Browser, StalePage
 from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
+# How long an initial BLOCKED waits for a first page that is still rendering.
+INITIAL_BLOCKED_WAIT_SECONDS = 10
+
 
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False):
@@ -94,6 +97,13 @@ class Agent:
                 if not state["browser"].fresh(page):
                     state["status"] = "ready"
                     raise StalePage("Page changed since the decision. Choose again.")
+                if selected == "BLOCKED" and not any(h["kind"] != "wait" for h in state["history"]):
+                    if getattr(self, "initial_blocked_deadline", None) is None:
+                        self.initial_blocked_deadline = time.monotonic() + INITIAL_BLOCKED_WAIT_SECONDS
+                    remaining = self.initial_blocked_deadline - time.monotonic()
+                    if remaining > 0 and state["browser"].wait_for_change(page, remaining):
+                        state["status"] = "ready"
+                        raise StalePage("Page changed during the initial blocked decision. Choose again.")
                 state["status"] = "done" if selected == "DONE" else "blocked"
                 state["plan_index"] = int(selected == "DONE")
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
