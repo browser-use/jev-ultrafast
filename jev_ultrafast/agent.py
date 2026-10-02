@@ -3,14 +3,29 @@
 import base64
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .browser import Browser, StalePage
 from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
-# After input that can route to another page, a blank observation is re-read until text appears.
+# After input that can route to another page, an observation that lost its content is re-read until it returns.
 SETTLE_SECONDS = 3
 SETTLE_SKIP_KINDS = {"wait", "scroll"}
+
+
+def lost_content(before, after):
+    """True while the page after input has not yet rendered the content the page before it had.
+
+    A page that had visible text but now has none counts as not yet rendered. So does a route
+    change within the same origin whose main landmark had text before and is now missing or
+    empty: an app shell that keeps its header while the next view loads.
+    """
+    if before["text"].strip() and not after["text"].strip():
+        return True
+    old, new = urlsplit(before["url"])._replace(fragment=""), urlsplit(after["url"])._replace(fragment="")
+    route_changed = (old.scheme, old.netloc) == (new.scheme, new.netloc) and old != new
+    return route_changed and before.get("main") is True and after.get("main") is not True
 
 
 class Agent:
@@ -144,11 +159,11 @@ class Agent:
                 }
             )
             state["page"] = state["browser"].observe(screenshot=self.screenshots)
-            if action["kind"] not in SETTLE_SKIP_KINDS and page["text"].strip():
-                # A client-side route change can leave the next page blank for a moment.
-                # Re-observe, without another model call, until it shows text or the wait ends.
+            if action["kind"] not in SETTLE_SKIP_KINDS:
+                # A client-side route change can show an empty page or an empty app shell for a moment.
+                # Re-observe, without another model call, until the content returns or the wait ends.
                 settle_deadline = time.monotonic() + SETTLE_SECONDS
-                while not state["page"]["text"].strip():
+                while lost_content(page, state["page"]):
                     remaining = settle_deadline - time.monotonic()
                     if remaining <= 0 or not state["browser"].wait_for_change(state["page"], remaining):
                         break

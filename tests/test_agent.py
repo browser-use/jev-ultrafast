@@ -373,6 +373,66 @@ def test_a_blank_page_that_keeps_changing_stops_at_the_deadline(runner, monkeypa
 
     assert runner.state["page"]["text"] == ""
     assert runner.state["status"] == "ready"
+    assert browser.observe.call_count > 1
+    assert browser.wait_for_change.call_count > 1
+
+
+def shell(main):
+    state = {**page(), "url": "https://example.test/apps/1/distribution", "text": "App\nDistribution", "main": main}
+    state["fingerprint"] = fingerprint(state)
+    return state
+
+
+def test_an_app_shell_whose_main_content_is_loading_waits_for_it(runner):
+    runner.state["page"] = {**runner.state["page"], "main": True}
+    runner.state["page"]["fingerprint"] = fingerprint(runner.state["page"])
+    loaded = {**shell(True), "text": "App\nDistribution\nVersion 1.0"}
+    browser = runner.state["browser"]
+    browser.observe = Mock(side_effect=[shell(None), shell(False), loaded])
+    browser.wait_for_change = Mock(return_value=True)
+
+    click_go(runner)
+
+    assert runner.state["page"]["main"] is True
+    assert browser.observe.call_count == 3
+    browser.act.assert_called_once()
+
+
+def test_leaving_for_another_origin_without_a_main_landmark_does_not_wait(runner):
+    runner.state["page"] = {**runner.state["page"], "main": True}
+    runner.state["page"]["fingerprint"] = fingerprint(runner.state["page"])
+    elsewhere = {**shell(None), "url": "https://elsewhere.test/docs"}
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=elsewhere)
+    browser.wait_for_change = Mock(return_value=True)
+
+    click_go(runner)
+
+    browser.wait_for_change.assert_not_called()
+
+
+def test_emptying_main_without_a_route_change_does_not_wait(runner):
+    runner.state["page"] = {**runner.state["page"], "main": True}
+    runner.state["page"]["fingerprint"] = fingerprint(runner.state["page"])
+    cleared = {**runner.state["page"], "main": False, "text": "Cart\nCheckout"}
+    cleared["fingerprint"] = fingerprint(cleared)
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=cleared)
+    browser.wait_for_change = Mock(return_value=True)
+
+    click_go(runner)
+
+    browser.wait_for_change.assert_not_called()
+
+
+def test_a_page_without_a_main_landmark_before_does_not_wait_for_one(runner):
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=shell(None))
+    browser.wait_for_change = Mock(return_value=True)
+
+    click_go(runner)
+
+    browser.wait_for_change.assert_not_called()
 
 
 def test_a_scroll_into_a_blank_region_does_not_wait(runner):
@@ -412,3 +472,4 @@ def test_wait_for_change_detects_a_new_semantic_page(monkeypatch):
 
     assert browser.wait_for_change(page(), 1) is True
     assert browser.fresh.call_count == 2
+
