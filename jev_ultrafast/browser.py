@@ -12,6 +12,21 @@ from browser_harness.helpers import cdp
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+# After a file is set, wait for the widget to settle: no busy region, no unfinished progress bar,
+# and visible text unchanged for 500 ms. Capped under the 5 s IPC timeout; the policy can WAIT longer.
+UPLOAD_SETTLED = """new Promise(resolve => {
+  const start=performance.now(); let last=null, since=start;
+  const pending=e=>e.checkVisibility() && (e.tagName==='PROGRESS' ? e.value<e.max :
+    e.hasAttribute('aria-valuenow') && +e.getAttribute('aria-valuenow') < +(e.getAttribute('aria-valuemax') || 100));
+  const poll=()=>{
+    const now=performance.now(), text=document.body.innerText;
+    if (text!==last) { last=text; since=now; }
+    const settled=now-since>=500 && !document.querySelector('[aria-busy="true"]') &&
+      ![...document.querySelectorAll('progress,[role="progressbar"]')].some(pending);
+    now-start>4000 || settled ? resolve() : setTimeout(poll,50);
+  };
+  poll();
+})"""
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -48,7 +63,7 @@ class Browser:
             try:
                 self.call(
                     "Runtime.evaluate",
-                    expression="""(action => new Promise(resolve => {
+                    expression=UPLOAD_SETTLED if action["kind"] == "upload" else """(action => new Promise(resolve => {
                       const field=window.__jevFast?.nodes.get(action.node);
                       const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
                       let frames=0, stopped=false;
@@ -97,12 +112,14 @@ class Browser:
             return current == [page["page_key"], page["guards"].get(str(node))]
         return self.evaluate(MARKER) == page["marker"]
 
-    def act(self, action, page, text=None):
+    def act(self, action, page, text=None, files=None):
         if not self.fresh(page, action):
             raise StalePage("Page changed since this decision. Observe again.")
         if action["kind"] == "wait":
             time.sleep(0.1)
-        result = browser_operation({"operation": "act", "session": self.session, "action": action, "text": text})
+        result = browser_operation(
+            {"operation": "act", "session": self.session, "action": action, "text": text, "files": files}
+        )
         self.after_input = action if action["kind"] != "wait" else None
         return result
 
@@ -137,6 +154,19 @@ def browser_operation(request):
         kind = action["kind"]
         if kind == "scroll":
             call("Input.dispatchMouseEvent", type="mouseWheel", x=550, y=650, deltaX=0, deltaY=action["delta"])
+        elif kind == "upload":
+            if type(action["node"]) is not int or not request.get("files"):
+                raise ValueError("Upload needs an observed file input and caller-supplied files")
+            # Resolve the observed node to a handle; the paths come from the caller, never the model.
+            found = call("Runtime.evaluate", expression="""(n => {
+              const e=window.__jevFast?.nodes.get(n);
+              return e?.isConnected && e.type==='file' && !e.disabled ? e : null;
+            })(""" + str(action["node"]) + ")")
+            handle = found.get("result", {}).get("objectId")
+            if found.get("exceptionDetails") or not handle:
+                raise StalePage("File input changed. Observe again.")
+            # Chrome fires input and change, as a user's file picker would.
+            call("DOM.setFileInputFiles", files=request["files"], objectId=handle)
         elif kind != "wait":
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")

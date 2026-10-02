@@ -1,5 +1,7 @@
 """Local-browser freshness/execution regressions. No model calls or external websites."""
 
+import tempfile
+from pathlib import Path
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
@@ -127,6 +129,47 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <label>Resume <input id="native" type="file" accept=".pdf,.png"></label>
+          <div class="dropzone" style="width:300px;height:80px;border:1px dashed">
+            <input id="hidden" type="file" multiple style="display:none" aria-label="Add media">Drop files</div>
+          <input type="file" aria-label="Disabled upload" disabled>
+          <div style="display:none"><input type="file" aria-label="Closed dialog upload"></div>
+        """) + "; for (const e of document.querySelectorAll('[type=file]')) "
+                         "e.addEventListener('change',()=>window.changes=(window.changes||0)+1)")
+        page = browser.observe(screenshot=False)
+        uploads = {a["label"]: a for a in page["actions"] if a["kind"] == "upload"}
+        assert set(uploads) == {"Resume", "Add media"}, uploads
+        assert uploads["Resume"]["accept"] == ".pdf,.png" and uploads["Add media"]["multiple"]
+        passed.append("visible and visually hidden file inputs are indexed; disabled/closed ones are not")
+        with tempfile.TemporaryDirectory() as folder:
+            sample = Path(folder) / "sample.png"
+            sample.write_bytes(b"\x89PNG\r\n\x1a\n")
+            for label, selector in [("Resume", "#native"), ("Add media", "#hidden")]:
+                page = browser.observe(screenshot=False)
+                action = next(a for a in page["actions"] if a["label"] == label)
+                browser.act(action, page, files=[str(sample)])
+                after = browser.observe(screenshot=False)
+                assert browser.evaluate(f"document.querySelector('{selector}').files[0]?.name") == "sample.png"
+                assert next(a for a in after["actions"] if a["label"] == label)["value"] == "sample.png"
+                assert after["fingerprint"] != page["fingerprint"]
+            assert browser.evaluate("window.changes") == 2
+            passed.append("upload sets caller files on the observed node, fires change, and is observed")
+
+            # A widget that uploads asynchronously and reports progress, like most upload components.
+            browser.evaluate("document.body.innerHTML=" + repr("""
+              <label class="zone">Attach <input id="async" type="file" style="display:none"></label>
+              <progress id="bar" max="100" value="0" hidden></progress><p id="status"></p>
+            """) + "; document.querySelector('#async').addEventListener('change',()=>{"
+                   "const bar=document.querySelector('#bar'); bar.hidden=false;"
+                   "const t=setInterval(()=>{bar.value+=25; if(bar.value>=100){clearInterval(t);"
+                   "bar.hidden=true; document.querySelector('#status').textContent='Upload complete'}},250)})")
+            page = browser.observe(screenshot=False)
+            action = next(a for a in page["actions"] if a["kind"] == "upload")
+            browser.act(action, page, files=[str(sample)])
+            assert "Upload complete" in browser.observe(screenshot=False)["text"]
+        passed.append("observation waits for an asynchronous upload's progress to finish")
     finally:
         browser.close()
     print("\n".join(passed))
