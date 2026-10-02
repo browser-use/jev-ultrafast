@@ -84,7 +84,7 @@ def ensure_automation_chrome(start_url=None):
     if not raw:
         return "not configured — set BU_CDP_URL to run a dedicated automation browser"
     parsed = urlparse(raw)
-    if parsed.scheme not in ("http", "https") or parsed.hostname not in LOOPBACK or not parsed.port:
+    if parsed.scheme != "http" or parsed.hostname not in LOOPBACK or not parsed.port:
         return f"{raw} is not a local http endpoint; leaving browser startup alone"
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
     if responds(host, parsed.port):
