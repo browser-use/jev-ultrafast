@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 import time
 
 import httpx
@@ -16,15 +17,37 @@ def post_json(url, key, body):
     for attempt in range(3):
         try:
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
-        except httpx.HTTPError:
-            raise RuntimeError("Model connection failed; no action executed.") from None
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Model connection failed ({type(exc).__name__}); no action executed.") from None
         if response.status_code in {429, 529, 503} and attempt < 2:
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
-            raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
+            code = provider_code(response)
+            detail = f" ({code})" if code else ""
+            raise RuntimeError(f"Model provider returned HTTP {response.status_code}{detail}; no action executed.")
         return response.json()
     raise RuntimeError("Model unavailable")
+
+
+def provider_code(response):
+    """A short error code from TypeSafe (detail.error_type) or an OpenAI-style body (error.code/type).
+
+    Only an identifier-shaped code is kept; the body, messages, and credentials are never echoed.
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    for key, fields in (("detail", ("error_type", "code")), ("error", ("code", "type"))):
+        error = payload.get(key)
+        for field in fields if isinstance(error, dict) else ():
+            code = error.get(field)
+            if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,100}", code):
+                return code
+    return None
 
 
 def validate_choice(answer, ids):

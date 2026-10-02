@@ -5,6 +5,7 @@ import time
 from copy import deepcopy
 from unittest.mock import Mock
 
+import httpx
 import pytest
 
 from jev_ultrafast import agent as loop
@@ -43,6 +44,39 @@ def decision(action="e1"):
         "latency_ms": 10,
         "usage": {},
     }
+
+
+@pytest.mark.parametrize("payload, expected", [
+    ({"detail": {"error_type": "max_tokens_exceeded"}}, r"HTTP 400 \(max_tokens_exceeded\);"),
+    ({"detail": {"error_type": "authentication_error", "message": "secret value"}}, r"\(authentication_error\);"),
+    ({"detail": "Too many choices. secret value"}, "HTTP 400;"),
+    ({"error": {"code": "max_tokens_exceeded"}}, "max_tokens_exceeded"),
+    ({"error": {"code": 400, "type": "invalid_request_error"}}, "invalid_request_error"),
+    ({"error": {"type": "invalid_api_key"}}, "invalid_api_key"),
+    ({"error": {"code": "secret value with spaces"}}, "HTTP 400;"),
+    ({"error": "unstructured body"}, "HTTP 400;"),
+])
+def test_provider_error_preserves_only_a_short_code(monkeypatch, payload, expected):
+    post = Mock(return_value=httpx.Response(400, json=payload))
+    monkeypatch.setattr(model.CLIENT, "post", post)
+    with pytest.raises(RuntimeError, match=expected) as failure:
+        model.post_json("https://example.test", "fixture", {})
+    assert "secret value" not in str(failure.value)
+    assert post.call_count == 1
+
+
+def test_provider_non_json_error_keeps_http_status(monkeypatch):
+    monkeypatch.setattr(model.CLIENT, "post", Mock(return_value=httpx.Response(400, text="not json")))
+    with pytest.raises(RuntimeError, match="HTTP 400;"):
+        model.post_json("https://example.test", "fixture", {})
+
+
+def test_provider_connection_error_identifies_timeout(monkeypatch):
+    monkeypatch.setattr(model.CLIENT, "post", Mock(side_effect=httpx.ReadTimeout("private detail")))
+    with pytest.raises(RuntimeError, match="ReadTimeout") as failure:
+        model.post_json("https://example.test", "fixture", {})
+    assert "private detail" not in str(failure.value)
+    assert failure.value.__cause__ is None and failure.value.__suppress_context__
 
 
 @pytest.mark.parametrize("mutation", ["unknown", "nan", "missing", "negative", "non_max", "confidence"])
