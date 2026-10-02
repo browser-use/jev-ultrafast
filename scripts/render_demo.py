@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import shutil
 import statistics
 import subprocess
 from pathlib import Path
@@ -15,8 +16,8 @@ args = parser.parse_args()
 source = args.source.resolve()
 state = json.loads((source / "state.json").read_text())
 assert state["verification"]["passed"] and not state["recording_errors"]
-frames = [(0, Image.open(source / "frames/000000.jpg").convert("RGB"))]
-frames += sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / "screencast").glob("*.jpg"))
+frames = [(0, source / "frames/000000.jpg")]
+frames += sorted((int(p.stem), p) for p in (source / "screencast").glob("*.jpg"))
 end = state["elapsed_ms"]
 folder = source / "video-frames"
 folder.mkdir(parents=True, exist_ok=False)
@@ -40,9 +41,21 @@ steps = [
     ("20 September", "Done. Search"),
     ("Search flights", "Search"),
 ]
+current_path, screenshot = None, None
 for i in range(round((end + 500) * 30 / 1000)):
     t = min(end, round(i * 1000 / 30))
-    screenshot = next(im for ts, im in reversed(frames) if ts <= t)
+    frame_path = next(path for ts, path in reversed(frames) if ts <= t)
+    if frame_path != current_path:
+        if screenshot is not None:
+            screenshot.close()
+        try:
+            with Image.open(frame_path) as image:
+                screenshot = image.convert("RGB")
+        except OSError:
+            # This directory was created by this run; allow retry after repairing the source frame.
+            shutil.rmtree(folder)
+            raise
+        current_path = frame_path
     canvas = Image.new("RGB", (1536, 1000), "#f3f4ec")
     d = ImageDraw.Draw(canvas)
     d.text((36, 26), "browser use", font=font(23, True), fill=ink)
@@ -96,6 +109,8 @@ for i in range(round((end + 500) * 30 / 1000)):
     )
     d.text((1194, 973), "github.com/browser-use/jev-ultrafast", font=font(12), fill=muted)
     canvas.save(folder / f"{i:04d}.png")
+if screenshot is not None:
+    screenshot.close()
 canvas.save(ROOT / "docs/flights-result.png")
 subprocess.run(
     [
