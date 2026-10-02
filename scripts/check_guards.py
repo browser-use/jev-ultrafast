@@ -127,6 +127,16 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        browser.evaluate("""document.body.innerHTML='<header>App</header><main style="padding-top:3000px"></main>'
+          +'<span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">'
+          +'Loading</span>'; document.querySelector('main').append(document.querySelector('.sr'))""")
+        shell = browser.observe(screenshot=False)
+        assert shell["main"] is False, shell["main"]
+        browser.evaluate("document.querySelector('main').insertAdjacentHTML('beforeend','<p>Version 1.0</p>')")
+        assert not browser.fresh(shell)
+        assert browser.observe(screenshot=False)["main"] is True
+        passed.append("main content below the fold changes the marker; clipped sr-only text does not count")
     finally:
         browser.close()
     print("\n".join(passed))

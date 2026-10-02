@@ -95,7 +95,10 @@
     const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let n;
     while ((n=w.nextNode())) {
       const p=n.parentElement;
-      if (n.textContent.trim() && p && !p.closest('script,style,noscript,template') && visible(p)) return true;
+      if (!n.textContent.trim() || !p || p.closest('script,style,noscript,template') || !visible(p)) continue;
+      // Screen-reader-only text (sr-only) sits in a box clipped to 1px and is not content.
+      const r=p.getBoundingClientRect();
+      if (r.width>1 && r.height>1) return true;
     }
     return false;
   };

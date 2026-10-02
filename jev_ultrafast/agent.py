@@ -23,7 +23,7 @@ def lost_content(before, after):
     """
     if before["text"].strip() and not after["text"].strip():
         return True
-    old, new = urlsplit(before["url"])._replace(fragment=""), urlsplit(after["url"])._replace(fragment="")
+    old, new = urlsplit(before["url"]), urlsplit(after["url"])
     route_changed = (old.scheme, old.netloc) == (new.scheme, new.netloc) and old != new
     return route_changed and before.get("main") is True and after.get("main") is not True
 

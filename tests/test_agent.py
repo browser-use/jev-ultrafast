@@ -425,6 +425,21 @@ def test_emptying_main_without_a_route_change_does_not_wait(runner):
     browser.wait_for_change.assert_not_called()
 
 
+def test_a_hash_route_change_that_empties_main_waits(runner):
+    runner.state["page"] = {**runner.state["page"], "url": "https://example.test/#/apps", "main": True}
+    runner.state["page"]["fingerprint"] = fingerprint(runner.state["page"])
+    loading = {**shell(False), "url": "https://example.test/#/apps/1"}
+    loaded = {**shell(True), "url": "https://example.test/#/apps/1", "text": "App\nDistribution\nVersion 1.0"}
+    browser = runner.state["browser"]
+    browser.observe = Mock(side_effect=[loading, loaded])
+    browser.wait_for_change = Mock(return_value=True)
+
+    click_go(runner)
+
+    assert runner.state["page"]["main"] is True
+    assert browser.observe.call_count == 2
+
+
 def test_a_page_without_a_main_landmark_before_does_not_wait_for_one(runner):
     browser = runner.state["browser"]
     browser.observe = Mock(return_value=shell(None))
