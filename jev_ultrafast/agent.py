@@ -18,8 +18,9 @@ def lost_content(before, after):
     """True while the page after input has not yet rendered the content the page before it had.
 
     A page that had visible text but now has none counts as not yet rendered. So does a route
-    change within the same origin whose main landmark had text before and is now missing or
-    empty: an app shell that keeps its header while the next view loads.
+    change within the same origin whose main landmark had content before and now has none: missing,
+    empty, or holding only navigation, like an app shell that keeps its header and sidebar while the
+    next view loads. A main that holds nothing but navigation links therefore waits out the cap.
     """
     if before["text"].strip() and not after["text"].strip():
         return True
