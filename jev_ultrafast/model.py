@@ -56,7 +56,6 @@ def post_json(url, key, body):
             )
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
         return response.json()
-    logger.error("Model provider unavailable for %s after retries", url)
     raise RuntimeError("Model unavailable")
 
 
