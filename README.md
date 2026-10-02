@@ -28,7 +28,7 @@ Every observation produces a new element table:
 ...
 ```
 
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
+The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `UPLOAD_FILE`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
 
 ```text
                       one TypeSafe request
@@ -89,6 +89,8 @@ uv run --env-file .env python examples/run.py \
   --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
 ```
 
+To upload, pass the files yourself: `Agent(url, goal, files=["/abs/slide.png"])` or `--file /abs/slide.png`. `UPLOAD_FILE` is offered only when files were supplied (and a single-file input only for one file). The model sees file names, never paths; paths never come from model output. The executor sets the caller's files on the observed `<input type=file>` with `DOM.setFileInputFiles`, then waits up to 4 s for the page to settle: no `aria-busy` region, no unfinished progress bar, and unchanged visible text.
+
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
 ## Why it moves
@@ -123,7 +125,7 @@ In six alternating runs with identical models and settings, both versions passed
 
 The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
 
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Uploads need an `<input type=file>` in the DOM (visible, or hidden inside a visible parent, as most upload widgets do); drag-and-drop-only zones and native file dialogs are unsupported. Owned tabs share the existing Chrome profile.
 
 ## Development
 
