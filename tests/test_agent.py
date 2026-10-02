@@ -318,3 +318,97 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def blank(url="https://example.test/apps"):
+    state = {**page(), "url": url, "text": "", "actions": [{"id": "wait", "kind": "wait", "label": "Wait"}]}
+    state["fingerprint"] = fingerprint(state)
+    return state
+
+
+def rendered(url="https://example.test/apps"):
+    state = {**page(), "url": url, "text": "Distribution"}
+    state["fingerprint"] = fingerprint(state)
+    return state
+
+
+def click_go(runner):
+    runner.state["decision"] = {**decision("e3"), "operation": "CLICK"}
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+
+def test_a_click_that_leaves_a_blank_page_waits_for_it_to_render(runner):
+    browser = runner.state["browser"]
+    browser.observe = Mock(side_effect=[blank(), rendered()])
+    browser.wait_for_change = Mock(return_value=True)
+
+    click_go(runner)
+
+    assert runner.state["page"]["text"] == "Distribution"
+    assert browser.observe.call_count == 2
+    assert runner.state["history"][-1]["page_changed"] is True
+    assert runner.state["status"] == "ready"
+    browser.act.assert_called_once()
+
+
+def test_a_page_that_stays_blank_is_handed_on_after_the_wait(runner):
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=blank())
+    browser.wait_for_change = Mock(return_value=False)
+
+    click_go(runner)
+
+    assert runner.state["page"]["text"] == ""
+    assert browser.observe.call_count == 1
+    browser.wait_for_change.assert_called_once()
+
+
+def test_a_blank_page_that_keeps_changing_stops_at_the_deadline(runner, monkeypatch):
+    monkeypatch.setattr(loop, "SETTLE_SECONDS", 0.05)
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=blank())
+    browser.wait_for_change = Mock(side_effect=lambda _page, timeout: time.sleep(min(timeout, 0.01)) or True)
+
+    click_go(runner)
+
+    assert runner.state["page"]["text"] == ""
+    assert runner.state["status"] == "ready"
+
+
+def test_a_scroll_into_a_blank_region_does_not_wait(runner):
+    scrollable = {**page(), "actions": [*page()["actions"], {"id": "down", "kind": "scroll", "label": "Scroll down"}]}
+    scrollable["fingerprint"] = fingerprint(scrollable)
+    runner.state["page"] = scrollable
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=blank())
+    browser.wait_for_change = Mock(return_value=True)
+    runner.state["decision"] = {**decision("down"), "operation": "SCROLL_DOWN"}
+
+    runner.command("act", {"fingerprint": scrollable["fingerprint"]})
+
+    browser.wait_for_change.assert_not_called()
+
+
+def test_an_already_blank_page_does_not_wait_again(runner):
+    source = {**blank(), "actions": page()["actions"]}
+    source["fingerprint"] = fingerprint(source)
+    runner.state["page"] = source
+    browser = runner.state["browser"]
+    browser.observe = Mock(return_value=blank())
+    browser.wait_for_change = Mock(return_value=True)
+    runner.state["decision"] = {**decision("e3"), "operation": "CLICK"}
+
+    runner.command("act", {"fingerprint": source["fingerprint"]})
+
+    browser.wait_for_change.assert_not_called()
+
+
+def test_wait_for_change_detects_a_new_semantic_page(monkeypatch):
+    from jev_ultrafast.browser import Browser
+
+    browser = Browser.__new__(Browser)
+    browser.fresh = Mock(side_effect=[True, False])
+    monkeypatch.setattr("jev_ultrafast.browser.time.sleep", Mock())
+
+    assert browser.wait_for_change(page(), 1) is True
+    assert browser.fresh.call_count == 2

@@ -8,6 +8,10 @@ from .browser import Browser, StalePage
 from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
+# After input that can route to another page, a blank observation is re-read until text appears.
+SETTLE_SECONDS = 3
+SETTLE_SKIP_KINDS = {"wait", "scroll"}
+
 
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False):
@@ -140,6 +144,15 @@ class Agent:
                 }
             )
             state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            if action["kind"] not in SETTLE_SKIP_KINDS and page["text"].strip():
+                # A client-side route change can leave the next page blank for a moment.
+                # Re-observe, without another model call, until it shows text or the wait ends.
+                settle_deadline = time.monotonic() + SETTLE_SECONDS
+                while not state["page"]["text"].strip():
+                    remaining = settle_deadline - time.monotonic()
+                    if remaining <= 0 or not state["browser"].wait_for_change(state["page"], remaining):
+                        break
+                    state["page"] = state["browser"].observe(screenshot=self.screenshots)
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             state["history"][-1].update(
                 page_changed=state["page"]["fingerprint"] != page["fingerprint"],

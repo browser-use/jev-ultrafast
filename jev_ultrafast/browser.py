@@ -97,6 +97,19 @@ class Browser:
             return current == [page["page_key"], page["guards"].get(str(node))]
         return self.evaluate(MARKER) == page["marker"]
 
+    def wait_for_change(self, page, timeout):
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if not self.fresh(page):
+                    return True
+            except StalePage:
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(0.1, remaining))
+
     def act(self, action, page, text=None):
         if not self.fresh(page, action):
             raise StalePage("Page changed since this decision. Observe again.")
