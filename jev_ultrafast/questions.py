@@ -11,7 +11,9 @@ WAIT only when the needed control is absent/disabled, or submitted results are s
 If Search/Submit is visible and the required fields are ready, CLICK it immediately.
 Recent WAIT actions are not evidence of loading. Prefer a useful visible control over WAIT.
 DONE requires visible evidence that ALL requirements are satisfied. If asked to open a result,
-a matching link is not enough. BLOCKED means no supported operation can make progress."""
+a matching link is not enough. BLOCKED means no supported operation can make progress.
+If a control the goal needs is not offered and a SCROLL operation can reveal more of the page or a region,
+SCROLL that region instead of choosing BLOCKED."""
 
 TARGET = """Choose the best observed target if the next operation is the one specified in this question.
 Use the user's entire goal, field values, nearby text, and recent actions. This question chooses only
