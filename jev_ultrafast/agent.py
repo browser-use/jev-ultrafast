@@ -10,7 +10,7 @@ from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
 # After input that can route to another page, an observation that lost its content is re-read until it returns.
-SETTLE_SECONDS = 3
+SETTLE_SECONDS = 10
 SETTLE_SKIP_KINDS = {"wait", "scroll"}
 
 
