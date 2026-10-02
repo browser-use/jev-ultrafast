@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from jev_ultrafast import agent as loop
-from jev_ultrafast import model
+from jev_ultrafast import chrome, model
 from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
 
 
@@ -27,6 +27,33 @@ def page():
     }
     state["fingerprint"] = fingerprint(state)
     return state
+
+
+def test_automation_chrome_starts_with_inspector_url(monkeypatch):
+    launches = []
+    monkeypatch.setenv("BU_CDP_URL", "http://127.0.0.1:9222")
+    monkeypatch.setenv("JEV_CHROME_PROFILE", ".")
+    monkeypatch.setattr(chrome, "responds", lambda *_args: False)
+    monkeypatch.setattr(chrome, "binary", lambda: chrome.Path("chrome.exe"))
+    monkeypatch.setattr(chrome, "launch", launches.append)
+
+    chrome.ensure_automation_chrome("http://127.0.0.1:8766")
+
+    assert launches[0][-1] == "http://127.0.0.1:8766"
+
+
+def test_automation_chrome_opens_inspector_target_when_already_running(monkeypatch):
+    daemon = Mock()
+    cdp = Mock()
+    monkeypatch.setenv("BU_CDP_URL", "http://127.0.0.1:9222")
+    monkeypatch.setattr(chrome, "responds", lambda *_args: True)
+    monkeypatch.setattr(chrome, "ensure_daemon", daemon)
+    monkeypatch.setattr(chrome, "cdp", cdp)
+
+    chrome.ensure_automation_chrome("http://127.0.0.1:8766")
+
+    daemon.assert_called_once_with()
+    cdp.assert_called_once_with("Target.createTarget", url="http://127.0.0.1:8766")
 
 
 def choice(ids, selected):

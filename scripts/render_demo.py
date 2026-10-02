@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("source", type=Path, help="Exact verified recording directory")
 args = parser.parse_args()
 source = args.source.resolve()
-state = json.loads((source / "state.json").read_text())
+state = json.loads((source / "state.json").read_text(encoding="utf-8"))
 assert state["verification"]["passed"] and not state["recording_errors"]
 frames = [(0, Image.open(source / "frames/000000.jpg").convert("RGB"))]
 frames += sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / "screencast").glob("*.jpg"))

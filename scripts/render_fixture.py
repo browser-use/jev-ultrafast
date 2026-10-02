@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 source = ROOT / "artifacts/final"
-state = json.loads((source / "travel-1.json").read_text())
+state = json.loads((source / "travel-1.json").read_text(encoding="utf-8"))
 frames = sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / "frames").glob("*.jpg"))
 end_ms = state["elapsed_ms"]
 folder = ROOT / "artifacts/video-frames"

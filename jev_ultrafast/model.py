@@ -1,6 +1,7 @@
 """TypeSafe makes choices; an optional small OpenAI-compatible model writes field values."""
 
 import json
+import logging
 import math
 import os
 import time
@@ -9,6 +10,7 @@ import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
+logger = logging.getLogger(__name__)
 CLIENT = httpx.Client(http2=True, timeout=25)
 
 
@@ -16,14 +18,45 @@ def post_json(url, key, body):
     for attempt in range(3):
         try:
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.error("Model request to %s failed: %s", url, exc)
             raise RuntimeError("Model connection failed; no action executed.") from None
         if response.status_code in {429, 529, 503} and attempt < 2:
-            time.sleep(0.5 * 2**attempt)
+            delay = 0.5 * 2**attempt
+            logger.warning(
+                "Model provider returned HTTP %d for %s (attempt %d/3); retrying in %.1fs...",
+                response.status_code,
+                url,
+                attempt + 1,
+                delay,
+            )
+            time.sleep(delay)
             continue
         if response.is_error:
+            error_body = response.text.strip() or "<empty response body>"
+            if len(error_body) > 2000:
+                error_body = error_body[:2000] + "... (truncated)"
+            if key and isinstance(key, str) and len(key) > 4:
+                error_body = error_body.replace(key, "[REDACTED]")
+            req_id = (
+                response.headers.get("x-request-id")
+                or response.headers.get("cf-ray")
+                or response.headers.get("request-id")
+                or ""
+            )
+            req_info = f" [request_id={req_id}]" if req_id else ""
+            model_info = f" (model: {body.get('model')})" if isinstance(body, dict) and "model" in body else ""
+            logger.error(
+                "Model provider HTTP %d from %s%s%s: %s",
+                response.status_code,
+                url,
+                model_info,
+                req_info,
+                error_body,
+            )
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
         return response.json()
+    logger.error("Model provider unavailable for %s after retries", url)
     raise RuntimeError("Model unavailable")
 
 

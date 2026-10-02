@@ -7,10 +7,12 @@ import time
 from pathlib import Path
 
 from browser_harness.admin import ensure_daemon
-from browser_harness.helpers import cdp
+from browser_harness.helpers import SCREENSHOT_IPC_RESPONSE_TIMEOUT_SECONDS, cdp
+
+from .chrome import ensure_automation_chrome
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
+READ_STATE = Path(__file__).with_name("snapshot.js").read_text(encoding="utf-8")
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
 
 class StalePage(ValueError):
@@ -19,6 +21,8 @@ class StalePage(ValueError):
 
 class Browser:
     def __init__(self, url):
+        # Every entry point needs a browser, not just the demo: scripts and examples land here too.
+        ensure_automation_chrome()
         ensure_daemon()
         self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
@@ -190,5 +194,13 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
-        info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        # A first capture waits for a frame, which on a real page costs seconds; the
+        # default 5s round-trip budget aborts mid-demo. Use the budget the library
+        # reserves for screenshots.
+        info["screenshot"] = call(
+            "Page.captureScreenshot",
+            _response_timeout=SCREENSHOT_IPC_RESPONSE_TIMEOUT_SECONDS,
+            format="jpeg",
+            quality=72,
+        )["data"]
     return info
