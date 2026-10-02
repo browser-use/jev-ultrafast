@@ -1,5 +1,7 @@
 """Local-browser freshness/execution regressions. No model calls or external websites."""
 
+import json
+import time
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
@@ -127,6 +129,63 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        def page_scroll_case(html, scroll_to=0, viewport=None):
+            if viewport:
+                browser.call("Emulation.setDeviceMetricsOverride", width=viewport[0], height=viewport[1],
+                             deviceScaleFactor=1, mobile=False)
+            browser.evaluate("document.documentElement.removeAttribute('style');document.body.removeAttribute('style');"
+                             "document.body.innerHTML=" + json.dumps(html) + ";"
+                             "for (const s of document.querySelectorAll('script[data-run]')) eval(s.textContent);"
+                             f"scrollTo(0,{scroll_to})")
+            time.sleep(0.1)
+            page = browser.observe(screenshot=False)
+            offered = {a["id"]: a for a in page["actions"] if a["id"] in ("scroll_down", "scroll_up")}
+
+            def moves(direction):
+                point = offered.get(direction) or {"x": min(550, page["w"] - 1), "y": min(650, page["h"] - 1)}
+                assert 0 <= point["x"] < page["w"] and 0 <= point["y"] < page["h"], point
+                before = browser.evaluate("scrollY")
+                browser.call("Input.dispatchMouseEvent", type="mouseWheel", x=point["x"], y=point["y"],
+                             deltaX=0, deltaY=560 if direction == "scroll_down" else -560)
+                time.sleep(0.4)
+                moved = browser.evaluate("scrollY") != before
+                browser.evaluate(f"scrollTo(0,{scroll_to})")
+                for e in ("#inner",):
+                    browser.evaluate(f"document.querySelector('{e}')?.dispatchEvent(new Event('reset'))")
+                return moved
+
+            result = {d: (d in offered, moves(d)) for d in ("scroll_down", "scroll_up")}
+            if viewport:
+                browser.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1,
+                             mobile=False)
+            return result
+
+        tall = '<p>Top</p><div style="height:3000px"></div><p>Bottom</p>'
+        inner = ('<div id="inner" style="position:fixed;left:0;top:0;width:100%;height:100%;overflow-y:auto;'
+                 'overscroll-behavior-y:{ob}"><div style="height:2000px">Inner</div></div>'
+                 '<script data-run>(()=>{{const i=document.querySelector("#inner");i.scrollTop={top};'
+                 'i.addEventListener("reset",()=>{{i.scrollTop={top}}})}})()</script>')
+        cases = {
+            "tall page": (tall, 0, None),
+            "body overflow hidden": (tall + "<style>body{overflow:hidden}</style>", 0, None),
+            "aria-modal dialog over a scrollable page": (
+                tall + '<div role="dialog" aria-modal="true" style="position:fixed;inset:0;background:#fff">'
+                + 'Dialog <button>Close</button></div>', 0, None),
+            "inner region that can still scroll down": (tall + inner.format(ob="auto", top=0), 0, None),
+            "inner region at its bottom, overscroll auto": (tall + inner.format(ob="auto", top=5000), 0, None),
+            "inner region at its bottom, overscroll contain": (tall + inner.format(ob="contain", top=5000), 0, None),
+            "page midway, inner region at its top, overscroll auto": (tall + inner.format(ob="auto", top=0), 800, None),
+            "page midway, inner region that can still scroll up": (tall + inner.format(ob="auto", top=300), 800, None),
+            "viewport smaller than the wheel point": (tall, 0, (480, 360)),
+        }
+        for label, (html, scroll_to, viewport) in cases.items():
+            result = page_scroll_case(html, scroll_to, viewport)
+            for direction, (offered, moved) in result.items():
+                assert offered == moved, (label, direction, offered, moved)
+            passed.append(f"page scroll offered exactly when it moves the document: {label} "
+                          f"(down {'yes' if result['scroll_down'][0] else 'no'}, "
+                          f"up {'yes' if result['scroll_up'][0] else 'no'})")
     finally:
         browser.close()
     print("\n".join(passed))
