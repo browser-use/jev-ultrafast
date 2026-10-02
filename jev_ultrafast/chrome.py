@@ -52,9 +52,8 @@ def responds(host, port, timeout=1.0):
     """True when something answers the DevTools endpoint. host is URL-safe, IPv6 already bracketed."""
     try:
         urllib.request.urlopen(f"http://{host}:{port}/json/version", timeout=timeout).close()
-        return True
-    except urllib.error.HTTPError:
-        # Chrome answered, e.g. 403 while the per-session approval popup is still pending.
+    except urllib.error.HTTPError as error:
+        return error.code == 403
         return True
     except Exception:
         return False
