@@ -39,6 +39,8 @@ def test_automation_chrome_starts_with_inspector_url(monkeypatch):
 
     chrome.ensure_automation_chrome("http://127.0.0.1:8766")
 
+    assert launches[0][1] == "--remote-debugging-port=9222"
+    assert launches[0][2] == "--user-data-dir=."
     assert launches[0][-1] == "http://127.0.0.1:8766"
 
 
