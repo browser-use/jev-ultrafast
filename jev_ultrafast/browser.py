@@ -26,7 +26,9 @@ class Browser:
             self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
             # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
             self.call("Emulation.setFocusEmulationEnabled", enabled=True)
-            self.call("Page.navigate", url=url)
+            navigation = self.call("Page.navigate", url=url)
+            if "errorText" in navigation:
+                raise RuntimeError(f"Navigation failed: {navigation['errorText']}")
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
                 if self.evaluate("document.readyState") == "complete":
@@ -36,7 +38,8 @@ class Browser:
             # Failed or interrupted construction cannot hand its owned tab to the caller for cleanup.
             try:
                 self.close()
-            except BaseException as cleanup_error:
+            except Exception as cleanup_error:
+                # Ordinary cleanup failures preserve the original error; fresh interrupts propagate.
                 error.add_note(f"Failed to close the owned browser tab: {cleanup_error}")
             raise
 
