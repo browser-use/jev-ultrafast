@@ -318,3 +318,24 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_executor_wheels_page_scroll_at_the_observed_point(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    cdp = Mock(return_value={})
+    monkeypatch.setattr(browser, "cdp", cdp)
+    browser_operation({
+        "operation": "act",
+        "session": "test",
+        "action": {"id": "scroll_down", "kind": "scroll", "delta": 560, "x": 399, "y": 299},
+    })
+    cdp.assert_called_once_with(
+        "Input.dispatchMouseEvent",
+        session_id="test",
+        type="mouseWheel",
+        x=399,
+        y=299,
+        deltaX=0,
+        deltaY=560,
+    )

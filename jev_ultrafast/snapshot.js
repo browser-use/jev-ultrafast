@@ -99,8 +99,28 @@
   const omitted_actions=Math.max(0,actions.length-250);
   actions.splice(250);
   actions.forEach((a,i)=>a.id='e'+(i+1));
-  if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
-  if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
+  // Page scrolling sends a wheel at this point; the action carries it so input uses the same point.
+  // Offer a direction only when that wheel would move the document: the viewport must allow scrolling,
+  // and no scroll region under the point may take the wheel first (one that can still move that way,
+  // or one at its end that stops scroll chaining with overscroll-behavior contain/none).
+  const wheel={x:Math.min(550,innerWidth-1),y:Math.min(650,innerHeight-1)};
+  const viewportOverflow=(o=>o!=='visible' ? o : getComputedStyle(document.body).overflowY)(
+    getComputedStyle(document.documentElement).overflowY);
+  const wheelHit=document.elementFromPoint(wheel.x,wheel.y);
+  const reachesDocument=down=>{
+    if (/(hidden|clip)/.test(viewportOverflow)) return false;
+    for (let n=wheelHit; n && n!==document.body && n!==document.documentElement; n=n.parentElement) {
+      const style=getComputedStyle(n);
+      if (!/(auto|scroll)/.test(style.overflowY) || n.scrollHeight<=n.clientHeight+2) continue;
+      if (down ? n.scrollTop+n.clientHeight<n.scrollHeight-1 : n.scrollTop>0) return false;
+      if (/(contain|none)/.test(style.overscrollBehaviorY)) return false;
+    }
+    return true;
+  };
+  if (scrollY+innerHeight<height-2 && reachesDocument(true))
+    actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560,...wheel});
+  if (scrollY>0 && reachesDocument(false))
+    actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560,...wheel});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
     scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
