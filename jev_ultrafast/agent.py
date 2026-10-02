@@ -3,10 +3,30 @@
 import base64
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .browser import Browser, StalePage
 from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
+
+# After input that can route to another page, an observation that lost its content is re-read until it returns.
+SETTLE_SECONDS = 10
+SETTLE_SKIP_KINDS = {"wait", "scroll"}
+
+
+def lost_content(before, after):
+    """True while the page after input has not yet rendered the content the page before it had.
+
+    A page that had visible text but now has none counts as not yet rendered. So does a route
+    change within the same origin whose main landmark had content before and now has none: missing,
+    empty, or holding only navigation, like an app shell that keeps its header and sidebar while the
+    next view loads. A main that holds nothing but navigation links therefore waits out the cap.
+    """
+    if before["text"].strip() and not after["text"].strip():
+        return True
+    old, new = urlsplit(before["url"]), urlsplit(after["url"])
+    route_changed = (old.scheme, old.netloc) == (new.scheme, new.netloc) and old != new
+    return route_changed and before.get("main") is True and after.get("main") is not True
 
 
 class Agent:
@@ -140,6 +160,15 @@ class Agent:
                 }
             )
             state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            if action["kind"] not in SETTLE_SKIP_KINDS:
+                # A client-side route change can show an empty page or an empty app shell for a moment.
+                # Re-observe, without another model call, until the content returns or the wait ends.
+                settle_deadline = time.monotonic() + SETTLE_SECONDS
+                while lost_content(page, state["page"]):
+                    remaining = settle_deadline - time.monotonic()
+                    if remaining <= 0 or not state["browser"].wait_for_change(state["page"], remaining):
+                        break
+                    state["page"] = state["browser"].observe(screenshot=self.screenshots)
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             state["history"][-1].update(
                 page_changed=state["page"]["fingerprint"] != page["fingerprint"],

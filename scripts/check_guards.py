@@ -1,5 +1,6 @@
 """Local-browser freshness/execution regressions. No model calls or external websites."""
 
+import json
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
@@ -127,6 +128,29 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        browser.evaluate("""document.body.innerHTML='<header>App</header><main style="padding-top:3000px"></main>'
+          +'<span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">'
+          +'Loading</span>'; document.querySelector('main').append(document.querySelector('.sr'))""")
+        shell = browser.observe(screenshot=False)
+        assert shell["main"] is False, shell["main"]
+        browser.evaluate("document.querySelector('main').insertAdjacentHTML('beforeend','<p>Version 1.0</p>')")
+        assert not browser.fresh(shell)
+        assert browser.observe(screenshot=False)["main"] is True
+        passed.append("main content below the fold changes the marker; clipped sr-only text does not count")
+
+        def main_flag(html):
+            browser.evaluate("document.body.innerHTML=" + json.dumps(html))
+            return browser.observe(screenshot=False)["main"]
+
+        sidebar = '<nav><a href="#">Overview</a> <a href="#">Privacy</a></nav>'
+        assert main_flag('<main>' + sidebar + '<section></section></main>') is False
+        role_nav = '<div role="navigation"><a href="#">Overview</a></div>'
+        assert main_flag('<main>' + role_nav + '<section></section></main>') is False
+        assert main_flag('<main><nav><a href="#">Overview</a></nav><section><h1>Privacy</h1></section></main>') is True
+        assert main_flag('<nav><main><h1>Privacy</h1><p>Get started</p></main></nav>') is True
+        assert main_flag('<nav role="main"><h1>Privacy</h1><p>Get started</p></nav>') is True
+        passed.append("navigation inside main does not count as main content")
     finally:
         browser.close()
     print("\n".join(passed))
