@@ -25,6 +25,18 @@
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
   const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
     roles.map(role=>'[role="'+role+'"]').join(',');
+  const isClickable = e => {
+    if (['HTML','BODY','SCRIPT','STYLE','NOSCRIPT','TEMPLATE','SVG','PATH'].includes(e.tagName)) return false;
+    if (e.parentElement?.closest('button,a[href],select,[role="button"],[role="link"]')) return false;
+    if (window.getComputedStyle(e).cursor !== 'pointer') return false;
+    const distinctChildren = Array.from(e.children).filter(c => {
+      if (['IMG','SVG','PATH','I','CANVAS'].includes(c.tagName)) return false;
+      const ct = c.textContent.trim(), et = e.textContent.trim();
+      if (!ct || ct === et) return false;
+      return window.getComputedStyle(c).cursor === 'pointer';
+    });
+    return distinctChildren.length === 0;
+  };
   const role = e => {
     const explicit=e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;
@@ -39,6 +51,7 @@
       if (e.type==='number') return 'spinbutton';
       if (['text','email','url','tel'].includes(e.type)) return 'textbox';
     }
+    if (isClickable(e)) return 'button';
     return null;
   };
   cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
@@ -46,19 +59,38 @@
       .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
   cache.guard=e=>{
     if (!e?.isConnected || !visible(e)) return null;
-    const scope=e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
-    return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
+    const rname=role(e);
+    const editable=e.tagName==='INPUT' || e.tagName==='TEXTAREA' || e.isContentEditable ||
+      ['textbox','searchbox','combobox','spinbutton'].includes(rname);
+    const scope=editable ? e : (e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement);
+    return [identity(e),rname,editable ? '' : name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
-      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
+      e.getAttribute('href'),editable ? '' : (scope?.innerText?.slice(0,6000)||'')];
   };
-  const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
+  const actions=[], seen=new Set();
+  const elements=[...document.querySelectorAll(selector)];
+  for (const e of document.querySelectorAll('div,span,li,p')) {
+    if (isClickable(e)) elements.push(e);
+  }
+  const activeFlyout=document.querySelector('dialog[open],[role="dialog"],[aria-modal="true"],.ant-popover:not(.ant-popover-hidden),.ant-dropdown:not(.ant-dropdown-hidden),.ant-select-dropdown:not(.ant-select-dropdown-hidden)');
+  const hasFlyout=activeFlyout && activeFlyout.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  for (const e of elements) {
+    if (seen.has(e)) continue;
+    seen.add(e);
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
-    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    const inFlyout=!!(hasFlyout && activeFlyout.contains(e));
+    if (hasFlyout && !inFlyout) continue;
+    const maxY=inFlyout ? innerHeight + 150 : innerHeight;
+    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=maxY) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
-    const base={node:identity(e),role:rname,label:name(e)||rname,
+    let lbl=name(e).trim();
+    if (!lbl && !e.querySelector('img')) continue;
+    if (inFlyout && ((lbl.includes('查看') && lbl.includes('宝贝')) || (typeof e.className === 'string' && e.className.includes('searchBtn')))) {
+      if (!lbl.includes('Submit')) lbl = '确定 (Submit filter): ' + lbl;
+    }
+    const base={node:identity(e),role:rname,label:lbl||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);

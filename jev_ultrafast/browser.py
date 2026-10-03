@@ -86,7 +86,7 @@ class Browser:
         raise StalePage("Page did not settle")
 
     def fresh(self, page, action=None):
-        if action is not None and action["kind"] in {"click", "select"}:
+        if action is not None and action["kind"] in {"click", "select", "fill"}:
             node = action["node"]
             if type(node) is not int:
                 return False
@@ -108,7 +108,10 @@ class Browser:
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
+            try:
+                cdp("Target.closeTarget", targetId=self.target)
+            except Exception:
+                pass
             self.target = None
 
 
@@ -146,9 +149,28 @@ def browser_operation(request):
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+              let r=e.getBoundingClientRect();
+              if (r.bottom > window.innerHeight || r.top < 0) {
+                e.scrollIntoView({block: 'nearest', inline: 'nearest'});
+                r=e.getBoundingClientRect();
+              }
+              const rects=Array.from(e.getClientRects());
+              let hit=null;
+              for (const cr of (rects.length > 0 ? rects : [r])) {
+                const cx=cr.x+cr.width/2, cy=cr.y+cr.height/2;
+                const pt=document.elementFromPoint(cx,cy);
+                if (e.contains(pt) || (pt?.closest('label') && pt.closest('label')===e.closest('label'))) {
+                  hit={x:cx,y:cy};
+                  break;
+                }
+              }
+              if (!hit) {
+                const x=r.x+r.width/2, y=r.y+r.height/2;
+                const pt=document.elementFromPoint(x,y);
+                if (!e.contains(pt) && !pt?.contains(e) && (!pt?.closest('label') || pt.closest('label')!==e.closest('label'))) return null;
+                hit={x,y};
+              }
+              const {x,y}=hit;
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
