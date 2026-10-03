@@ -37,7 +37,10 @@ def response_state():
 def close_browser():
     global AGENT
     if AGENT:
-        AGENT.close()
+        try:
+            AGENT.close()
+        except Exception:
+            pass
         AGENT = None
 
 
@@ -45,16 +48,21 @@ def command(name, body):
     global AGENT
     if name == "reset":
         scenario = body.get("scenario", "flights")
-        if scenario not in {"travel", "research", "flights"}:
+        custom_url = body.get("url", "").strip()
+        if scenario not in {"travel", "research", "flights", "custom"}:
             raise ValueError("Unknown demo scenario")
         goal = body.get("goal", "").strip()
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
         close_browser()
+        if scenario == "custom":
+            start_url = custom_url or "https://www.wikipedia.org"
+        elif scenario == "flights":
+            start_url = "https://www.google.com/travel/flights?hl=en"
+        else:
+            start_url = f"{ORIGIN}/fixture.html?scenario={scenario}"
         AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
+            start_url,
             goal,
             screenshots=True,
             record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,

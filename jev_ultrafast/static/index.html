@@ -30,15 +30,19 @@
       <form id="task-form">
         <div class="task-label">
           <label for="goal">Give it a task</label
-          ><select id="scenario" name="scenario" aria-label="Demo scenario">
+          ><select id="scenario" name="scenario" aria-label="Demo scenario" style="border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: #fff; cursor: pointer;">
+            <option value="custom" selected>Custom URL · real web</option>
             <option value="flights">Google Flights · real web</option>
             <option value="travel">Travel planner · fixture</option>
             <option value="research">Reading room · fixture</option>
           </select>
         </div>
+        <div id="url-container" style="display: block; padding: 6px 0 10px; margin-bottom: 10px; border-bottom: 1px dashed var(--line);">
+          <label for="custom-url" style="font-size: 12px; font-weight: 500; color: #555; display: block; margin-bottom: 4px;">Website URL (自定义网址):</label>
+          <input type="text" id="custom-url" name="custom-url" placeholder="https://www.wikipedia.org" value="https://www.wikipedia.org" style="width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: #fafaf7; font-size: 14px;" />
+        </div>
         <div class="task-row">
-          <textarea id="goal" name="goal" rows="5">
-Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.</textarea
+          <textarea id="goal" name="goal" rows="4">Go to English Wikipedia, search for "Apollo 11", find the mission summary, and open the "Apollo Lunar Module" article. Stop once the Lunar Module article is open.</textarea
           ><button type="submit" id="start" class="primary">
             Start demo <span>↗</span>
           </button>
