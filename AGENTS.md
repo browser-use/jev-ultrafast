@@ -5,7 +5,7 @@ Read README.md before editing. Keep the loop small: page -> indexed elements -> 
 - The input is one natural-language goal. Do not add site-specific plans or hardcoded field values.
 - TypeSafe chooses an operation and operation-specific target heads in one request. Consume only the selected operation's target.
 - Targets must map to observed elements and supported operations. Never let the model emit selectors or executable code.
-- TYPE_TEXT invokes the text LLM. Cache a stale retry's value only while its entire helper input is identical.
+- TYPE_TEXT invokes the text LLM. Cache a stale retry's value only while its entire helper input is identical and it targets the same element (compare the action's code-owned node identity).
 - Never retry a browser mutation. Log execution before observing its result.
 - Screenshots are optional; the model does not consume them. Keep demonstration footage at its original speed.
 - Keep credentials server-side and .env ignored. Tests must not call paid APIs.

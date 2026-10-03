@@ -211,6 +211,32 @@ def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch
     assert helper.call_count == 2
 
 
+def test_stale_text_cache_does_not_cross_same_labeled_fields(runner, monkeypatch):
+    """A cached value from a stale fill on one field must not be typed into a
+    distinct same-labeled field whose helper input is byte-identical (#191)."""
+    runner.state["page"]["actions"] = [
+        {"id": "e1", "kind": "fill", "label": "Name", "role": "textbox", "value": "", "node": 10},
+        {"id": "e2", "kind": "fill", "label": "Name", "role": "textbox", "value": "", "node": 20},
+        {"id": "wait", "kind": "wait", "label": "Wait"},
+    ]
+    ctx1 = model.field_context("Find a book", runner.state["page"]["actions"][0], runner.state["page"], [])
+    ctx2 = model.field_context("Find a book", runner.state["page"]["actions"][1], runner.state["page"], [])
+    assert ctx1 == ctx2  # distinct elements, identical helper input
+    helper = Mock(side_effect=[("John", {"model": "test", "latency_ms": 10}),
+                               ("Jane", {"model": "test", "latency_ms": 10})])
+    monkeypatch.setattr(loop, "field_text", helper)
+    runner.state["browser"].act.side_effect = [StalePage("Changed before input"), None]
+    with pytest.raises(StalePage):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    # The next decision picks the other same-labeled field; the cache must miss.
+    runner.state["decision"] = decision("e2")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert helper.call_count == 2
+    typed = [c.kwargs["text"] for c in runner.state["browser"].act.call_args_list]
+    assert typed == ["John", "Jane"]
+    assert runner.pending_text is None
+
+
 def test_loading_waits_do_not_trigger_no_progress_stop(runner):
     for _ in range(5):
         runner.state["decision"] = decision("wait")

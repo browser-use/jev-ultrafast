@@ -107,11 +107,15 @@ class Agent:
                 if not state["browser"].fresh(page):
                     raise StalePage("Page changed before text generation. Choose again.")
                 context = field_context(state["goal"], action, page, state["history"])
-                if self.pending_text and self.pending_text[0] == context:
-                    _, text, helper = self.pending_text
+                # The stale-retry cache is keyed by element identity as well as
+                # the helper input: two same-labeled fields build byte-identical
+                # contexts, so the cached value must not cross elements (#191).
+                element = action.get("node")
+                if self.pending_text and self.pending_text[0] == element and self.pending_text[1] == context:
+                    _, _, text, helper = self.pending_text
                 else:
                     text, helper = field_text(context)
-                    self.pending_text = (context, text, helper)
+                    self.pending_text = (element, context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
             state["browser"].act(action, page, text=text)
