@@ -211,6 +211,37 @@ def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch
     assert helper.call_count == 2
 
 
+def test_same_labeled_fields_have_distinct_helper_context(runner, monkeypatch):
+    p = runner.state["page"]
+    second = {**p["actions"][0], "id": "e4", "node": 30}
+    p["actions"].append(second)
+    p["guards"] = {"10": ["Passenger 1\nSearch"], "30": ["Passenger 2\nSearch"]}
+    first_context = model.field_context(runner.state["goal"], p["actions"][0], p, [])
+    second_context = model.field_context(runner.state["goal"], second, p, [])
+    assert first_context["field"]["index"] == "1"
+    assert second_context["field"]["index"] == "3"
+    assert first_context["field"]["context"] == "Passenger 1\nSearch"
+    assert second_context["field"]["context"] == "Passenger 2\nSearch"
+    helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
+    monkeypatch.setattr(loop, "field_text", helper)
+    runner.state["browser"].act.side_effect = [StalePage("Changed before input"), None]
+    with pytest.raises(StalePage):
+        runner.command("act", {"fingerprint": p["fingerprint"]})
+    runner.state["decision"] = {**decision("e4"), "target": "3"}
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+    assert helper.call_count == 2
+    assert helper.call_args.args[0] == second_context
+
+
+def test_helper_context_keeps_node_identity_when_index_is_reused():
+    p = page()
+    before = model.field_context("Find a book", p["actions"][0], p, [])
+    p["actions"][0]["node"] = p["actions"][1]["node"] = 30
+    after = model.field_context("Find a book", p["actions"][0], p, [])
+    assert before["field"]["index"] == after["field"]["index"]
+    assert before["field"]["node"] != after["field"]["node"]
+
+
 def test_loading_waits_do_not_trigger_no_progress_stop(runner):
     for _ in range(5):
         runner.state["decision"] = decision("wait")
