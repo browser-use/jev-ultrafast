@@ -151,6 +151,14 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
+def test_markdown_wrapped_json_in_text_helper(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": [{"message": {"content": '```json\n{"text":"Zurich"}\n```'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+    context = model.field_context('Fly from "Zurich" to London', page()["actions"][0], page(), [])
+    assert model.field_text(context)[0] == "Zurich"
+
+
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
