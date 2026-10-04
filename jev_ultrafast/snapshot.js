@@ -25,6 +25,33 @@
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
   const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
     roles.map(role=>'[role="'+role+'"]').join(',');
+  const styleCache = new WeakMap();
+  const styleOf = el => {
+    if (!el || el.nodeType !== 1) return null;
+    let s = styleCache.get(el);
+    if (!s) {
+      s = window.getComputedStyle(el);
+      styleCache.set(el, s);
+    }
+    return s;
+  };
+  const isClickable = e => {
+    if (['HTML','BODY','SCRIPT','STYLE','NOSCRIPT','TEMPLATE','SVG','PATH'].includes(e.tagName)) return false;
+    if (e.offsetWidth === 0 && e.offsetHeight === 0 && e.getClientRects().length === 0) return false;
+    if (e.parentElement?.closest('button,a[href],select,[role="button"],[role="link"]')) return false;
+    if (e.querySelector('button,select,input,textarea,a[href],[role="button"],[role="link"]')) return false;
+    const style = styleOf(e);
+    if (!style || style.cursor !== 'pointer') return false;
+    const parentStyle = styleOf(e.parentElement);
+    if (parentStyle && parentStyle.cursor === 'pointer') return false;
+    const distinctChildren = Array.from(e.children).filter(c => {
+      if (['IMG','SVG','PATH','I','CANVAS'].includes(c.tagName)) return false;
+      const ct = c.textContent.trim(), et = e.textContent.trim();
+      if (!ct || ct === et) return false;
+      return styleOf(c)?.cursor === 'pointer';
+    });
+    return distinctChildren.length === 0;
+  };
   const role = e => {
     const explicit=e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;
@@ -39,26 +66,53 @@
       if (e.type==='number') return 'spinbutton';
       if (['text','email','url','tel'].includes(e.type)) return 'textbox';
     }
+    if (isClickable(e)) return 'button';
     return null;
   };
-  cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
-    [...document.querySelectorAll('input,textarea,select')].filter(safe)
-      .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
-  cache.guard=e=>{
+  const flyoutSelector = 'dialog[open],[role="dialog"],[aria-modal="true"],.ant-popover:not(.ant-popover-hidden),.ant-dropdown:not(.ant-dropdown-hidden),.ant-select-dropdown:not(.ant-select-dropdown-hidden)';
+  const findActiveFlyout = () =>
+    [...document.querySelectorAll(flyoutSelector)].find(f => f.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
+  cache.flyoutSelector = flyoutSelector;
+  cache.findActiveFlyout = findActiveFlyout;
+  cache.pageKey=(flyout=findActiveFlyout())=>{
+    return [performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
+      [...document.querySelectorAll('input,textarea,select')].filter(safe)
+        .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly]),
+      flyout ? identity(flyout) : null];
+  };
+  cache.guard=(e,flyout=findActiveFlyout())=>{
     if (!e?.isConnected || !visible(e)) return null;
-    const scope=e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
-    return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
+    if (flyout && !flyout.contains(e)) return null;
+    const rname=role(e);
+    const editable=e.tagName==='INPUT' || e.tagName==='TEXTAREA' || e.isContentEditable ||
+      ['textbox','searchbox','combobox','spinbutton'].includes(rname);
+    const scope=editable ? e : (e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement);
+    return [identity(e),rname,name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
-      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
+      e.getAttribute('href'),flyout ? identity(flyout) : null,editable ? '' : (scope?.innerText?.slice(0,6000)||'')];
   };
-  const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
+  const actions=[], seen=new Set();
+  const elements=[...document.querySelectorAll(selector)];
+  for (const e of document.querySelectorAll('div,span,li,p')) {
+    if (e.offsetWidth === 0 && e.offsetHeight === 0 && e.getClientRects().length === 0) continue;
+    if (isClickable(e)) elements.push(e);
+  }
+  const activeFlyout=findActiveFlyout();
+  const hasFlyout=!!activeFlyout;
+  for (const e of elements) {
+    if (seen.has(e)) continue;
+    seen.add(e);
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
-    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    const inFlyout=!!(hasFlyout && activeFlyout.contains(e));
+    if (hasFlyout && !inFlyout) continue;
+    const maxY=inFlyout ? innerHeight + 150 : innerHeight;
+    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=maxY) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
-    const base={node:identity(e),role:rname,label:name(e)||rname,
+    let lbl=name(e).trim();
+    if (!lbl && !e.querySelector('img')) lbl=rname;
+    const base={node:identity(e),role:rname,label:lbl||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
@@ -90,12 +144,12 @@
     }
   }
   const text=words.join('\n').slice(0,6000), height=document.documentElement.scrollHeight;
-  const page_key=cache.pageKey(), guards={};
-  for (const a of actions) if (!(a.node in guards)) guards[a.node]=cache.guard(cache.nodes.get(a.node));
+  const page_key=cache.pageKey(activeFlyout), guards={};
+  for (const a of actions) if (!(a.node in guards)) guards[a.node]=cache.guard(cache.nodes.get(a.node),activeFlyout);
   // Compare meaning and identity. Geometry is always resolved and hit-tested just before input.
   const semantics=actions.map(({rect,...action})=>action);
   const marker=[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
-    document.title,text,semantics,page_key[6]];
+    document.title,text,semantics,page_key[6],page_key[7]];
   const omitted_actions=Math.max(0,actions.length-250);
   actions.splice(250);
   actions.forEach((a,i)=>a.id='e'+(i+1));

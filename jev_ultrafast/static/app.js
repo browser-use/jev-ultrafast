@@ -8,6 +8,8 @@ const goals = {
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
+  custom:
+    'Go to English Wikipedia, search for "Apollo 11", find the mission summary, and open the "Apollo Lunar Module" article. Stop once the Lunar Module article is open.',
 };
 const escape = (value) =>
   String(value ?? "").replace(
@@ -150,12 +152,28 @@ $("task-form").addEventListener("submit", (event) => {
   automatic = false;
   perform(
     () =>
-      call("reset", { scenario: $("scenario").value, goal: $("goal").value }),
+      call("reset", {
+        scenario: $("scenario").value,
+        url: $("custom-url")?.value,
+        goal: $("goal").value,
+      }),
     "Opening a fresh browser…",
   );
 });
 $("scenario").addEventListener("change", () => {
-  $("goal").value = goals[$("scenario").value];
+  const isCustom = $("scenario").value === "custom";
+  const urlBox = $("url-container");
+  if (urlBox) urlBox.style.display = isCustom ? "block" : "none";
+  $("goal").value = goals[$("scenario").value] || "";
+});
+$("custom-url")?.addEventListener("input", () => {
+  const url = $("custom-url").value.trim();
+  if (url && !url.includes("wikipedia.org") && $("goal").value === goals.custom) {
+    $("goal").value = "";
+    $("goal").placeholder = "Describe the task to perform on this site…";
+  } else if ((!url || url.includes("wikipedia.org")) && !$("goal").value) {
+    $("goal").value = goals.custom;
+  }
 });
 $("choose").addEventListener("click", () =>
   perform(() => call("predict"), "Jev is comparing the actions…"),
