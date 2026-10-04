@@ -107,11 +107,26 @@ class Agent:
                 if not state["browser"].fresh(page):
                     raise StalePage("Page changed before text generation. Choose again.")
                 context = field_context(state["goal"], action, page, state["history"])
-                if self.pending_text and self.pending_text[0] == context:
-                    _, text, helper = self.pending_text
+                # The stale-retry cache is keyed by element identity as well as
+                # the helper input: two same-labeled fields build byte-identical
+                # contexts, so the cached value must not cross elements (#191).
+                # Node identity is only unique within one document — node ids
+                # restart at 1 after a full navigation (snapshot.js re-inits
+                # window.__jevFast per document) — so the key also carries the
+                # document-scoped token page["marker"][0] (performance.timeOrigin,
+                # stable across DOM churn in the same document, fresh per document).
+                element = action["node"]
+                document = state["page"]["marker"][0]
+                if (
+                    self.pending_text
+                    and self.pending_text[0] == element
+                    and self.pending_text[1] == document
+                    and self.pending_text[2] == context
+                ):
+                    _, _, _, text, helper = self.pending_text
                 else:
                     text, helper = field_text(context)
-                    self.pending_text = (context, text, helper)
+                    self.pending_text = (element, document, context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
             state["browser"].act(action, page, text=text)
