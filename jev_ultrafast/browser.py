@@ -136,9 +136,18 @@ class Browser:
         return result
 
     def close(self):
-        if self.target:
+        if not self.target:
+            return
+        try:
             cdp("Target.closeTarget", targetId=self.target)
-            self.target = None
+        except (RuntimeError, OSError) as exc:
+            # Teardown has nothing to retry: the harness raises RuntimeError when the browser is
+            # already gone (the launcher's leave() can shut it down before an atexit close lands
+            # here) and OSError when the daemon socket is unreachable. Letting either escape an
+            # atexit callback prints a 13-line "Exception ignored" trace without changing the
+            # exit code, so the one line below carries the whole report.
+            print(f"Tab release did not land: {type(exc).__name__}: {exc}", file=sys.stderr)
+        self.target = None
 
 
 def fingerprint(state):
