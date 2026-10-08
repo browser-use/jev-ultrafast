@@ -64,17 +64,18 @@ class Browser:
                       const scopedOptions=()=>{
                         const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
                           .split(/\\s+/).filter(Boolean);
-                        return ids.map(id=>document.getElementById(id)).filter(Boolean)
-                          .flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
+                        const roots=ids.length ? ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
+                        return roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
                       };
+                      const portalOpen=()=>field?.getAttribute('aria-expanded')==='true';
                       const portalOptions=()=>{
                         // Menus often render into a body-level portal whose real listbox is NOT
                         // the aria-controls target (observed on Google Flights: aria-controls
                         // names an empty span while the options live in a detached ul). When the
                         // clicked control reports itself expanded, scan for popup items globally.
-                        if (field?.getAttribute('aria-expanded')!=='true') return [];
+                        if (!portalOpen()) return [];
                         return [...document.querySelectorAll(
-                          '[role="option"],[role="menuitem"],[role="menuitemradio"]')]
+                          '[role="option"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]')]
                           .filter(e=>e.closest('[role="listbox"],[role="menu"]'));
                       };
                       const tick=()=>{
@@ -87,14 +88,16 @@ class Browser:
                         // rendering frames, and background tabs throttle rAF (~2 fps on Linux;
                         // focus emulation does not lift it), so a 0.25 s transition can span more
                         // than a wall-clock second. Observing during the fade would see an empty
-                        // popup and wrongly treat the goal as BLOCKED.
-                        const fading=laidOut.length>0 && !laidOut.some(visible);
+                        // popup and wrongly treat the goal as BLOCKED. The generous cap only
+                        // applies to a clicked popup that still reports itself open, so leftover
+                        // hidden items from an already-closed menu — and the typing/autocomplete
+                        // path, which keeps its own 200 ms budget — never stall the observation.
+                        const fading=!autocomplete && portalOpen() && laidOut.length>0 && !laidOut.some(visible);
                         // Popup items can also be created asynchronously after the click: the
                         // trigger already reports aria-expanded=true while the portal is still
                         // empty (and the page behind it already aria-hidden). Give an expanded
                         // popup control a short appearance grace before observing an empty menu.
-                        const awaitingPopup=!autocomplete && !fading && laidOut.length===0 &&
-                          field?.getAttribute('aria-expanded')==='true';
+                        const awaitingPopup=!autocomplete && !fading && laidOut.length===0 && portalOpen();
                         const elapsed=performance.now()-start;
                         // Caps are bounded but generous: on rAF-throttled background tabs a
                         // sub-second CSS fade was measured to span 1.5-2.5 s of wall-clock time.
