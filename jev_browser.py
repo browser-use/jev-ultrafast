@@ -1,6 +1,8 @@
 """Launcher: ensure a debuggable Edge instance, point browser-harness at it, run the jev demo.
 
 Leaving the demo (Ctrl+C) also closes the debug instance -- but only the one this launcher started.
+Leaving never stops the browser-harness daemon, though: the next run reuses one that answers, or
+replaces it when its browser has gone.
 
 Usage:
   uv run python jev_browser.py            # start the demo server (same as `uv run jev`)
@@ -71,16 +73,23 @@ def close_instance(url):
 def leave(info, proc):
     if proc is None:
         print(f"Left the Edge instance on port {PORT} up; this launcher did not start it.", flush=True)
-        return
-    close_instance(info["webSocketDebuggerUrl"])
-    for _ in range(10):
-        time.sleep(0.5)
-        if not port_busy(PORT):
-            print(f"Edge debug instance on port {PORT} closed.", flush=True)
-            return
-    # Still listening means the polite request never landed, so stop the process we started ourselves.
-    proc.terminate()
-    print(f"Edge still held port {PORT}, sent terminate() to the instance this launcher started.", flush=True)
+    else:
+        close_instance(info["webSocketDebuggerUrl"])
+        for _ in range(10):
+            time.sleep(0.5)
+            if not port_busy(PORT):
+                print(f"Edge debug instance on port {PORT} closed.", flush=True)
+                break
+        else:
+            # Still listening means the polite request never landed, so stop the process we started ourselves.
+            proc.terminate()
+            print(f"Edge still held port {PORT}, sent terminate() to the instance this launcher started.", flush=True)
+    # Naming the one thing leaving does not clean up, so a quiet port is not read as an empty machine.
+    print(
+        "This launcher does not stop the browser-harness daemon: the next run reuses one that answers, "
+        "or replaces it when its browser has gone.",
+        flush=True,
+    )
 
 
 def main():

@@ -109,6 +109,26 @@ def test_a_port_that_stays_busy_means_the_request_never_landed(monkeypatch):
     assert proc.terminated == 1
 
 
+def test_every_way_of_leaving_names_the_daemon_that_still_runs(monkeypatch, capsys):
+    mod = launcher(monkeypatch)
+    monkeypatch.setattr(mod, "close_instance", lambda url: None)
+    outs = []
+
+    mod.leave(INFO, None)  # somebody else's instance: nothing of ours to shut down
+    outs.append(capsys.readouterr().out)
+    busy = [True, False]
+    monkeypatch.setattr(mod, "port_busy", lambda port: busy.pop(0))
+    mod.leave(INFO, Proc())  # the polite request landed
+    outs.append(capsys.readouterr().out)
+    monkeypatch.setattr(mod, "port_busy", lambda port: True)
+    mod.leave(INFO, Proc())  # it never landed, so the started process gets terminate()
+    outs.append(capsys.readouterr().out)
+
+    for out in outs:
+        assert "does not stop the browser-harness daemon" in out, out
+    assert "did not start it" in outs[0] and "closed" in outs[1] and "terminate()" in outs[2]
+
+
 def test_leaving_the_panel_runs_the_teardown_even_when_the_server_raises(monkeypatch):
     mod = launcher(monkeypatch)
     proc = Proc()
