@@ -49,6 +49,24 @@ class Agent:
             "elements": action_space(self.state["page"]["actions"])[0],
         }
 
+    def _settle(self, attempts=40, delay=0.25):
+        """Re-observe until the document stops navigating.
+
+        A navigation can outlive the click that started it. The immediate
+        re-observe in `tick` used to raise StalePage a second time and end the
+        run, so wait for the document to settle instead of giving up on the
+        first attempt.
+        """
+        browser = self.state["browser"]
+        last = None
+        for _ in range(attempts):
+            try:
+                return browser.observe(screenshot=self.screenshots)
+            except StalePage as exc:
+                last = exc
+                time.sleep(delay)
+        raise last
+
     def command(self, name, body=None):
         body = body or {}
         state = self.state
@@ -59,7 +77,7 @@ class Agent:
             except StalePage:
                 state["decision"] = None
                 state["status"] = "ready"
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                state["page"] = self._settle()
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
         elif name == "predict":
