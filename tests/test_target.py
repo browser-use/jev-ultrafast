@@ -38,6 +38,7 @@ function node(tag, r, extra = {}) {
     getAttribute() { return null; },
     checkVisibility() { return this.visible !== false; },
     getBoundingClientRect() { return this.r; },
+    getClientRects() { return this.lines || [this.r]; },
     contains(o) { for (let n = o; n; n = n.parent) if (n === this) return true; return false; }};
 }
 const label = node('LABEL', rect(100, 100, 200, 150));
@@ -52,17 +53,25 @@ const middle = rect(150, 150, 100, 50);
 const inner = {link: node('A', middle, {href: '/terms'}), button: node('BUTTON', middle),
                rolebox: node('DIV', middle, {role: 'checkbox'})}[SCENE];
 if (inner) inner.parent = label;
+// A link that wraps: "The rig keeps 64 bones after an" (500,100 230x18) then "export" (500,122 50x18). Its box's
+// centre (615,120) falls between the lines, on its parent.
+const item = node('DIV', rect(490, 90, 260, 80));
+const wrapped = node('A', rect(500, 100, 230, 40),
+                     {href: '#rig', lines: [rect(500, 100, 230, 18), rect(500, 122, 50, 18)]});
+wrapped.parent = item;
+const onWrapped = (x, y) => SCENE === 'wrapped' && wrapped.lines.some(l => inside(l, x, y));
 globalThis.innerWidth = 1280; globalThis.innerHeight = 800;
 globalThis.document = {elementFromPoint: (x, y) =>
-  SCENE === 'overlay' || (SCENE === 'two' && inside(label.r, x, y)) ? overlay
+  onWrapped(x, y) ? wrapped : SCENE === 'wrapped' && inside(item.r, x, y) ? item
+  : SCENE === 'overlay' || (SCENE === 'two' && inside(label.r, x, y)) ? overlay
   : inside(label2.r, x, y) ? label2 : inside(text.r, x, y) ? text : inner && inside(inner.r, x, y) ? inner : label};
-globalThis.window = {__jevFast: {nodes: new Map([[1, radio]])}};
+globalThis.window = {__jevFast: {nodes: new Map([[1, radio], [2, wrapped]])}};
 """
 
 
-def where(scene, kind="click"):
+def where(scene, kind="click", target=1):
     script = f"const SCENE = {json.dumps(scene)};\n{FAKE_PAGE}\n" \
-             f"console.log(JSON.stringify(({TARGET_JS})({json.dumps({'kind': kind, 'node': 1})})));"
+             f"console.log(JSON.stringify(({TARGET_JS})({json.dumps({'kind': kind, 'node': target})})));"
     out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20, check=True)
     return json.loads(out.stdout)
 
@@ -92,3 +101,13 @@ def test_a_label_in_an_inert_region_is_never_clicked():
 
 def test_a_covered_label_gives_way_to_the_next_usable_one():
     assert where("two") == {"x": 500, "y": 175}
+
+
+def test_a_link_that_wraps_onto_two_lines_is_clicked_on_one_of_its_lines():
+    # QAJev Cloud QA, 11 Oct: "The rig keeps 64 bones after an export" wrapped, its box's centre landed on the
+    # parent beside the short second line, and every click was refused as covered.
+    assert where("wrapped", target=2) == {"x": 615, "y": 109}
+
+
+def test_a_wrapped_link_under_an_overlay_is_still_refused():
+    assert where("overlay", target=2) is None

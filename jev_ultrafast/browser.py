@@ -120,10 +120,17 @@ def fingerprint(state):
 # Where to click an observed node, or null when it is gone, disabled, hidden or covered.
 TARGET_JS = """(action => {
   const seen=el=>el.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  // A point inside el that el itself receives. A link that wraps has its box's centre between or beside its lines,
+  // so each line's centre is tried after the box's.
   const centre=el=>{
-    const r=el.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-    if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-    return el.contains(document.elementFromPoint(x,y)) ? {x,y} : null;
+    const box=el.getBoundingClientRect();
+    if (!box.width || !box.height) return null;
+    for (const r of [box, ...el.getClientRects()]) {
+      const x=r.x+r.width/2, y=r.y+r.height/2;
+      if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+      if (el.contains(document.elementFromPoint(x,y))) return {x,y};
+    }
+    return null;
   };
   const e=window.__jevFast?.nodes.get(action.node);
   if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]')) return null;
