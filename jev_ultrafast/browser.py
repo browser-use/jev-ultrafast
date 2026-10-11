@@ -117,6 +117,40 @@ def fingerprint(state):
     return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
+# Where to click an observed node, or null when it is gone, disabled, hidden or covered.
+TARGET_JS = """(action => {
+  const seen=el=>el.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  const centre=el=>{
+    const r=el.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+    if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
+    return el.contains(document.elementFromPoint(x,y)) ? {x,y} : null;
+  };
+  const e=window.__jevFast?.nodes.get(action.node);
+  if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]')) return null;
+  if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
+  let at=seen(e) ? centre(e) : null;
+  if (!at && action.kind==='click' && e.matches('input[type=radio],input[type=checkbox]')) {
+    // A styled choice hides its input inside its label: a person clicks the label, which toggles the input.
+    const label=[...(e.labels||[])].find(seen);
+    at=label ? centre(label) : null;
+    // A link or button at the label's centre would take the click instead of the choice: refuse.
+    const hit=at && document.elementFromPoint(at.x,at.y);
+    const inner=hit && hit.closest('a,button,input,select,textarea,summary,[role=button],[role=link]');
+    if (inner && inner!==e && label.contains(inner)) at=null;
+  }
+  if (!at) return null;
+  const {x,y}=at;
+  if (action.kind==='select') {
+    if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
+        !o.disabled && !o.closest('optgroup[disabled]'))) return null;
+    e.value=action.value;
+    e.dispatchEvent(new Event('input',{bubbles:true}));
+    e.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  return {x,y};
+})"""
+
+
 def browser_operation(request):
     operation = request["operation"]
     session = request["session"]
@@ -141,23 +175,7 @@ def browser_operation(request):
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
-            target = evaluate("""(action => {
-              const e=window.__jevFast?.nodes.get(action.node);
-              if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
-                  !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
-              if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
-              if (action.kind==='select') {
-                if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
-                    !o.disabled && !o.closest('optgroup[disabled]'))) return null;
-                e.value=action.value;
-                e.dispatchEvent(new Event('input',{bubbles:true}));
-                e.dispatchEvent(new Event('change',{bubbles:true}));
-              }
-              return {x,y};
-            })(""" + json.dumps(action) + ")")
+            target = evaluate(TARGET_JS + "(" + json.dumps(action) + ")")
             if target is None:
                 if kind == "select":
                     raise RuntimeError("Dropdown execution was not confirmed; inspect before retrying.")
