@@ -131,12 +131,20 @@ TARGET_JS = """(action => {
   let at=seen(e) ? centre(e) : null;
   if (!at && action.kind==='click' && e.matches('input[type=radio],input[type=checkbox]')) {
     // A styled choice hides its input inside its label: a person clicks the label, which toggles the input.
-    const label=[...(e.labels||[])].find(seen);
-    at=label ? centre(label) : null;
-    // A link or button at the label's centre would take the click instead of the choice: refuse.
-    const hit=at && document.elementFromPoint(at.x,at.y);
-    const inner=hit && hit.closest('a,button,input,select,textarea,summary,[role=button],[role=link]');
-    if (inner && inner!==e && label.contains(inner)) at=null;
+    // The first label that is visible, not inert, not covered, and has no other control at its centre (that control
+    // would take the click instead: the same controls snapshot.js observes).
+    const controls='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
+      ['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio','option','gridcell','combobox',
+       'textbox','searchbox','spinbutton'].map(role=>'[role="'+role+'"]').join(',');
+    for (const label of e.labels||[]) {
+      if (!seen(label) || label.closest('[inert]')) continue;
+      const point=centre(label);
+      if (!point) continue;
+      const inner=document.elementFromPoint(point.x,point.y).closest(controls);
+      if (inner && inner!==e && label.contains(inner)) continue;
+      at=point;
+      break;
+    }
   }
   if (!at) return null;
   const {x,y}=at;

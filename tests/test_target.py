@@ -11,9 +11,19 @@ from jev_ultrafast.browser import TARGET_JS
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
 
 # A choice card: <label> (100,100 200x150) holds a visible text span and a radio hidden at 1x1 px. The label covers
-# the radio, as a styled choice does. An unrelated overlay can cover everything instead.
+# the radio, as a styled choice does. Each SCENE adds one thing: an overlay over everything, a control at the card's
+# centre (a link, a button or a role=checkbox), an inert card, or a second label with the first one covered.
 FAKE_PAGE = r"""
 const rect = (x, y, width, height) => ({x, y, width, height});
+const inside = (r, x, y) => x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
+function hits(n, token) {  // enough of CSS matching for the selectors TARGET_JS uses
+  if (token === '[inert]') return !!n.inert;
+  const role = /^\[role="?([a-z]+)"?\]$/.exec(token);
+  if (role) return n.role === role[1];
+  if (token.startsWith('[')) return false;
+  const [tag, attr] = token.split('[');
+  return tag === n.tagName.toLowerCase() && (!attr || attr !== 'href]' || !!n.href);
+}
 function node(tag, r, extra = {}) {
   return {tagName: tag, isConnected: true, parent: null, r, ...extra,
     matches(sel) {
@@ -21,8 +31,8 @@ function node(tag, r, extra = {}) {
       return sel.split(',').some(s => s.trim() === `input[type=${this.type}]` && this.tagName === 'INPUT');
     },
     closest(sel) {
-      const tags = sel.split(',').map(t => t.trim());
-      for (let n = this; n; n = n.parent) if (tags.includes(n.tagName.toLowerCase())) return n;
+      const tokens = sel.split(',').map(t => t.trim());
+      for (let n = this; n; n = n.parent) if (tokens.some(t => hits(n, t))) return n;
       return null;
     },
     getAttribute() { return null; },
@@ -31,15 +41,21 @@ function node(tag, r, extra = {}) {
     contains(o) { for (let n = o; n; n = n.parent) if (n === this) return true; return false; }};
 }
 const label = node('LABEL', rect(100, 100, 200, 150));
+// a second <label for> of the same radio, elsewhere; in the 'inert' scene it sits in an inert region
+const label2 = node('LABEL', rect(400, 100, 200, 150), {inert: SCENE === 'inert'});
 const text = node('SPAN', rect(110, 110, 180, 30)); text.parent = label;
-const radio = node('INPUT', rect(105, 105, 1, 1), {type: 'radio', labels: [label]}); radio.parent = label;
+const labels = SCENE === 'two' ? [label, label2] : SCENE === 'inert' ? [label2] : [label];
+const radio = node('INPUT', rect(105, 105, 1, 1), {type: 'radio', labels});
+radio.parent = label;
 const overlay = node('DIV', rect(0, 0, 1280, 800));
-const link = node('A', rect(150, 150, 100, 50)); link.parent = label;  // a "terms" link in the middle of the card
+const middle = rect(150, 150, 100, 50);
+const inner = {link: node('A', middle, {href: '/terms'}), button: node('BUTTON', middle),
+               rolebox: node('DIV', middle, {role: 'checkbox'})}[SCENE];
+if (inner) inner.parent = label;
 globalThis.innerWidth = 1280; globalThis.innerHeight = 800;
-const inText = (x, y) => x >= 110 && x <= 290 && y >= 110 && y <= 140;
-const inLink = (x, y) => SCENE === 'link' && x >= 150 && x <= 250 && y >= 150 && y <= 200;
-globalThis.document = {elementFromPoint: (x, y) => SCENE === 'overlay' ? overlay : inText(x, y) ? text
-  : inLink(x, y) ? link : label};
+globalThis.document = {elementFromPoint: (x, y) =>
+  SCENE === 'overlay' || (SCENE === 'two' && inside(label.r, x, y)) ? overlay
+  : inside(label2.r, x, y) ? label2 : inside(text.r, x, y) ? text : inner && inside(inner.r, x, y) ? inner : label};
 globalThis.window = {__jevFast: {nodes: new Map([[1, radio]])}};
 """
 
@@ -64,6 +80,15 @@ def test_only_a_click_falls_back_to_the_label():
     assert where("card", kind="fill") is None
 
 
-def test_a_label_whose_centre_holds_a_link_or_button_is_refused():
-    # The click would follow the link instead of choosing the option (Orchestrator review, 11 Oct).
-    assert where("link") is None
+@pytest.mark.parametrize("scene", ["link", "button", "rolebox"])
+def test_a_label_whose_centre_holds_another_control_is_refused(scene):
+    # The click would go to that control (follow the link, press the button) instead of choosing the option.
+    assert where(scene) is None
+
+
+def test_a_label_in_an_inert_region_is_never_clicked():
+    assert where("inert") is None  # the click would do nothing there
+
+
+def test_a_covered_label_gives_way_to_the_next_usable_one():
+    assert where("two") == {"x": 500, "y": 175}
