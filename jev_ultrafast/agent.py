@@ -137,6 +137,7 @@ class Agent:
                     "usage": decision["usage"],
                     "executed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
                     "elapsed_ms": state["elapsed_ms"],
+                    **({"scroll_before": dict(page.get("scroll", {}))} if action["kind"] == "scroll" else {}),
                 }
             )
             state["page"] = state["browser"].observe(screenshot=self.screenshots)
@@ -146,6 +147,8 @@ class Agent:
                 url=state["page"]["url"],
                 elapsed_ms=state["elapsed_ms"],
             )
+            if action["kind"] == "scroll":
+                state["history"][-1]["scroll_after"] = dict(state["page"].get("scroll", {}))
             if state["record"]:
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
