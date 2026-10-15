@@ -20,12 +20,43 @@ LOCK = threading.Lock()
 AGENT = None
 
 
+def parse_env_line(line):
+    """Return (key, value) for one .env line, or None when it is not an assignment."""
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    if line.startswith("export "):
+        line = line[len("export ") :].lstrip()
+    if "=" not in line:
+        return None
+    key, _, value = line.partition("=")
+    key = key.strip()
+    if not key:
+        return None
+    value = value.strip()
+    quote = None
+    for index, char in enumerate(value):
+        if quote:
+            if char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char == "#":
+            value = value[:index]
+            break
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return key, value
+
+
 def load_environment():
     path = Path.cwd() / ".env"
     if path.exists():
         for line in path.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
+            parsed = parse_env_line(line)
+            if parsed:
+                key, value = parsed
                 os.environ.setdefault(key, value)
 
 
