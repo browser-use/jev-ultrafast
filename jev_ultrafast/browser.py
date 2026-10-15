@@ -150,9 +150,12 @@ def browser_operation(request):
               if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
               if (!e.contains(document.elementFromPoint(x,y))) return null;
               if (action.kind==='select') {
-                if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
-                    !o.disabled && !o.closest('optgroup[disabled]'))) return null;
-                e.value=action.value;
+                // Pin the observed option: e.value would land on the first value match in
+                // tree order, even a disabled one or a duplicate-valued earlier option.
+                const option=e.tagName==='SELECT' ? e.options[action.option_index] : null;
+                if (!option || option.disabled || option.closest('optgroup[disabled]') ||
+                    option.value!==action.value) return null;
+                e.selectedIndex=action.option_index;
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
