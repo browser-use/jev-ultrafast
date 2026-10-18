@@ -40,7 +40,8 @@ CASES = [
     ("input[type=datetime-local]", input_("datetime-local"), "textbox"),
     ("input[type=month]", input_("month"), "textbox"),
     ("input[type=week]", input_("week"), "textbox"),
-    # range and color are not text fields; they still need an action as click targets.
+    # range and color are not text fields; the executor sets a range by its numeric
+    # value, while color keeps its click-to-open picker action.
     ("input[type=range]", input_("range"), "slider"),
     ("input[type=color]", input_("color"), "button"),
     # The mappings that already worked stay unchanged.
