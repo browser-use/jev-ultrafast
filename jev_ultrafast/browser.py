@@ -155,6 +155,9 @@ def browser_operation(request):
                 const option=e.tagName==='SELECT' ? e.options[action.option_index] : null;
                 if (!option || option.disabled || option.closest('optgroup[disabled]') ||
                     option.value!==action.value) return null;
+                // The observed label fingerprints the option: a duplicate-valued option
+                // that moved into this position must not silently pass as the one seen.
+                if (action.option_label!==undefined && option.label!==action.option_label) return null;
                 e.selectedIndex=action.option_index;
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));

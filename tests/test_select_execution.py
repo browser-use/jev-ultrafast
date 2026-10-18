@@ -33,11 +33,15 @@ def select_block():
 
 # A stand-in for a live <select>: the value setter picks the first option in tree
 # order with a matching value, disabled options included, exactly like the browser.
+# Options may declare a group; groups named in disabledGroups behave as if they sat
+# inside a disabled <optgroup>.
 HARNESS = """
-function makeSelect(specs, initial) {
+function makeSelect(specs, initial, disabledGroups) {
+  disabledGroups = disabledGroups || [];
   const options = specs.map((s, i) => ({
     index: i, value: s.value, label: s.label, disabled: !!s.disabled,
-    selected: false, closest: () => null,
+    selected: false, group: s.group,
+    closest: sel => sel === 'optgroup[disabled]' && s.group && disabledGroups.includes(s.group) ? {} : null,
   }));
   const e = {
     tagName: 'SELECT', readOnly: false, events: [], isConnected: true, options,
@@ -78,11 +82,11 @@ def run_node(script):
     return json.loads(result.stdout)
 
 
-def execute(specs, action, initial=None):
+def execute(specs, action, initial=None, disabled_groups=None):
     """Run the real act snippet against a stub select and report what the page ended up with."""
     script = (
         HARNESS
-        + f"const e=makeSelect({json.dumps(specs)}, {json.dumps(initial)});\n"
+        + f"const e=makeSelect({json.dumps(specs)}, {json.dumps(initial)}, {json.dumps(disabled_groups)});\n"
         + f"window.__jevFast.nodes.set({action['node']}, e);\n"
         + f"const result={act_snippet()}{json.dumps(action)});\n"
         + "console.log(JSON.stringify({"
@@ -94,11 +98,11 @@ def execute(specs, action, initial=None):
     return run_node(script)
 
 
-def enumerate(specs, initial=None):
+def enumerate(specs, initial=None, disabled_groups=None):
     """Run the real snapshot SELECT enumeration and return the offered actions."""
     script = (
         HARNESS
-        + f"const e=makeSelect({json.dumps(specs)}, {json.dumps(initial)});\n"
+        + f"const e=makeSelect({json.dumps(specs)}, {json.dumps(initial)}, {json.dumps(disabled_groups)});\n"
         + "const actions=[];\n"
         + "const enumerate=new Function('e','base','actions',"
         + json.dumps(select_block() + "} return actions;")
@@ -128,7 +132,7 @@ def test_disabled_duplicate_option_is_not_selected():
             {"value": "ZRH", "label": "Zurich (sold out)", "disabled": True},
             {"value": "ZRH", "label": "Zurich"},
         ],
-        {"kind": "select", "node": 1, "value": "ZRH", "option_index": 1},
+        {"kind": "select", "node": 1, "value": "ZRH", "option_index": 1, "option_label": "Zurich"},
         initial=0,
     )
     assert result["confirmed"] is True
@@ -139,13 +143,47 @@ def test_disabled_duplicate_option_is_not_selected():
 def test_normal_single_match_still_selects_and_fires_events():
     result = execute(
         [{"value": "bern", "label": "Bern"}, {"value": "ZRH", "label": "Zurich"}],
-        {"kind": "select", "node": 1, "value": "ZRH", "option_index": 1},
+        {"kind": "select", "node": 1, "value": "ZRH", "option_index": 1, "option_label": "Zurich"},
         initial=0,
     )
     assert result == {
         "confirmed": True, "selectedIndex": 1, "selectedLabel": "Zurich",
         "events": ["input", "change"],
     }
+
+
+# A duplicate-valued option that moved into the pinned position is refused: the
+# observed label fingerprints the option the model actually saw.
+def test_replaced_duplicate_option_is_refused_by_label():
+    result = execute(
+        [{"value": "bern", "label": "Bern"}, {"value": "1", "label": "Double"}],
+        {"kind": "select", "node": 1, "value": "1", "option_index": 1, "option_label": "Single"},
+        initial=0,
+    )
+    assert result["confirmed"] is False
+
+
+def test_label_fingerprint_confirms_the_pinned_option():
+    result = execute(
+        [{"value": "1", "label": "Single"}, {"value": "1", "label": "Double"}],
+        {"kind": "select", "node": 1, "value": "1", "option_index": 1, "option_label": "Double"},
+        initial=0,
+    )
+    assert result == {
+        "confirmed": True, "selectedIndex": 1, "selectedLabel": "Double",
+        "events": ["input", "change"],
+    }
+
+
+# Options inside a disabled <optgroup> are refused, not silently selected.
+def test_option_under_a_disabled_optgroup_is_refused():
+    result = execute(
+        [{"value": "bern", "label": "Bern"}, {"value": "ZRH", "label": "Zurich", "group": "cantons"}],
+        {"kind": "select", "node": 1, "value": "ZRH", "option_index": 1, "option_label": "Zurich"},
+        initial=0,
+        disabled_groups=["cantons"],
+    )
+    assert result["confirmed"] is False
 
 
 # A decision whose pinned option no longer matches the page is refused, never guessed.
@@ -191,10 +229,21 @@ def test_snapshot_numbers_options_by_position_in_the_full_list():
         {"value": "1", "label": "Single"},
         {"value": "1", "label": "Double"},
     ], initial=-1)
-    assert [(a["option_index"], a["label"], a["value"]) for a in actions] == [
-        (0, "Room → Single", "1"),
-        (1, "Room → Double", "1"),
+    assert [(a["option_index"], a["option_label"], a["label"], a["value"]) for a in actions] == [
+        (0, "Single", "Room → Single", "1"),
+        (1, "Double", "Room → Double", "1"),
     ]
+
+
+# Options under a disabled <optgroup> are omitted from the offered actions without
+# renumbering the rest, mirroring the disabled-option behaviour.
+def test_snapshot_skips_options_under_a_disabled_optgroup_but_keeps_positions():
+    actions = enumerate([
+        {"value": "bern", "label": "Bern"},
+        {"value": "ZRH", "label": "Zurich", "group": "cantons"},
+        {"value": "basel", "label": "Basel"},
+    ], initial=0, disabled_groups=["cantons"])
+    assert [(a["option_index"], a["label"]) for a in actions] == [(2, "Room → Basel")]
 
 
 # Disabled and already-selected options stay excluded, without renumbering the rest.

@@ -67,7 +67,7 @@
     if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
     if (e.tagName==='SELECT') {
       for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
-        actions.push({...base,kind:'select',option_index:o.index,value:o.value,
+        actions.push({...base,kind:'select',option_index:o.index,option_label:o.label,value:o.value,
           current_value:[...e.selectedOptions].map(o=>o.label).join(', '),label:base.label+' → '+o.label});
     } else {
       const editable=!e.readOnly && e.getAttribute('aria-readonly')!=='true' &&
