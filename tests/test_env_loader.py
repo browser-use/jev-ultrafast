@@ -65,6 +65,20 @@ def test_export_prefix_creates_no_export_variable(load_env):
     assert loaded == {"export TYPESAFE_MODEL": None, "TYPESAFE_MODEL": "jev-latest"}
 
 
+def test_export_prefix_accepts_any_whitespace(load_env):
+    loaded = load_env(
+        "export\tTYPESAFE_MODEL=jev-latest\nexport  TEXT_MODEL=mercury-2.5\n",
+        "TYPESAFE_MODEL",
+        "TEXT_MODEL",
+    )
+    assert loaded == {"TYPESAFE_MODEL": "jev-latest", "TEXT_MODEL": "mercury-2.5"}
+
+
+def test_escaped_quote_does_not_close_the_string(load_env):
+    loaded = load_env('SECRET="hello \\"# world"\n', "SECRET")
+    assert loaded == {"SECRET": 'hello \\"# world'}
+
+
 def test_quoted_value_keeps_inner_spaces_and_hashes(load_env):
     loaded = load_env('SECRET="hello # world"\n', "SECRET")
     assert loaded == {"SECRET": "hello # world"}
@@ -88,6 +102,16 @@ def test_unquoted_values_are_trimmed_only(load_env):
 def test_comment_and_blank_lines_are_skipped(load_env):
     loaded = load_env("# a comment\n\n   \nKEY=abc\n", "KEY")
     assert loaded == {"KEY": "abc"}
+
+
+def test_hash_without_leading_space_is_kept_in_unquoted_values(load_env):
+    loaded = load_env("TOKEN=abc#def\nKEY=#tag\n", "TOKEN", "KEY")
+    assert loaded == {"TOKEN": "abc#def", "KEY": "#tag"}
+
+
+def test_comment_only_value_is_empty(load_env):
+    loaded = load_env("EMPTY=  # note\n", "EMPTY")
+    assert loaded == {"EMPTY": ""}
 
 
 def test_existing_environment_wins(tmp_path, monkeypatch):

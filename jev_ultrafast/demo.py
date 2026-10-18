@@ -25,25 +25,36 @@ def parse_env_line(line):
     line = line.strip()
     if not line or line.startswith("#"):
         return None
-    if line.startswith("export "):
-        line = line[len("export ") :].lstrip()
+    stripped_export = line[len("export") :] if line.startswith("export") else line
+    if stripped_export and stripped_export[0].isspace():
+        line = stripped_export.lstrip()
     if "=" not in line:
         return None
     key, _, value = line.partition("=")
     key = key.strip()
     if not key:
         return None
-    value = value.strip()
+    # An inline comment starts at a '#' outside quotes that is preceded by
+    # whitespace, so TOKEN=abc#def keeps its '#' while KEY=abc # note drops it.
+    # Backslash-escaped quotes do not close a double-quoted value.
+    comment = None
     quote = None
+    escaped = False
     for index, char in enumerate(value):
         if quote:
-            if char == quote:
+            if escaped:
+                escaped = False
+            elif char == "\\" and quote == '"':
+                escaped = True
+            elif char == quote:
                 quote = None
         elif char in "\"'":
             quote = char
-        elif char == "#":
-            value = value[:index]
+        elif char == "#" and index and value[index - 1].isspace():
+            comment = index
             break
+    if comment is not None:
+        value = value[:comment]
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
         value = value[1:-1]
