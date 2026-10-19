@@ -104,6 +104,11 @@ def test_comment_and_blank_lines_are_skipped(load_env):
     assert loaded == {"KEY": "abc"}
 
 
+def test_comment_after_export_prefix_is_skipped(load_env):
+    loaded = load_env("export #ignored=secret\n", "#ignored")
+    assert loaded == {"#ignored": None}
+
+
 def test_hash_without_leading_space_is_kept_in_unquoted_values(load_env):
     loaded = load_env("TOKEN=abc#def\nKEY=#tag\n", "TOKEN", "KEY")
     assert loaded == {"TOKEN": "abc#def", "KEY": "#tag"}

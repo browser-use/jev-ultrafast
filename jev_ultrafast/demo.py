@@ -28,6 +28,8 @@ def parse_env_line(line):
     stripped_export = line[len("export") :] if line.startswith("export") else line
     if stripped_export and stripped_export[0].isspace():
         line = stripped_export.lstrip()
+    if not line or line.startswith("#"):
+        return None
     if "=" not in line:
         return None
     key, _, value = line.partition("=")
