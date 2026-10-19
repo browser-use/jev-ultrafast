@@ -160,8 +160,12 @@ def browser_operation(request):
                 // Native pickers ignore IME text commits (Input.insertText), so the
                 // advertised TYPE_TEXT can only work by assigning the value directly.
                 if (typeof action.text!=='string') return null;
-                e.value=action.text;
-                if (e.value!==action.text) return null; // the control rejected the format
+                const prev = e.value;
+                e.value = action.text;
+                if (!e.value && action.text) {
+                  e.value = prev;
+                  return null; // rejected invalid format
+                }
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
                 return {x,y,native:true};
@@ -176,7 +180,7 @@ def browser_operation(request):
                 return {x,y,native:true};
               }
               return {x,y};
-            })(""" + json.dumps({**action, "text": request["text"]}) + ")")
+            })(""" + json.dumps({**action, "text": request.get("text")}) + ")")
             if target is None:
                 if kind == "select":
                     raise RuntimeError("Dropdown execution was not confirmed; inspect before retrying.")

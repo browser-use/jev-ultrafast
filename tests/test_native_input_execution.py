@@ -61,7 +61,10 @@ function makeInput(type, attrs) {
   } else if (type === 'time') {
     Object.defineProperty(e, 'value', {
       get() { return stored; },
-      set(v) { stored = /^\\d{2}:\\d{2}/.test(v) ? v : ''; },
+      set(v) {
+        const m = /^([01]\\d|2[0-3]):([0-5]\\d)(?::([0-5]\\d))?$/.exec(v);
+        stored = m ? `${m[1]}:${m[2]}` : '';
+      },
     });
   } else {
     e.value = stored;
@@ -181,3 +184,74 @@ def test_aria_only_sliders_stay_click_targets():
 
 def test_textbox_stays_editable():
     assert editable_of("{readOnly:false,getAttribute:()=>null,type:'text',tagName:'INPUT'}", "textbox") is True
+
+
+# A valid time with seconds is normalized to HH:MM and accepted.
+def test_time_fill_with_seconds_normalizes_and_is_accepted():
+    result = execute("time", {}, {"kind": "fill", "node": 1, "text": "14:30:00"})
+    assert result == {
+        "confirmed": True, "native": True, "value": "14:30", "events": ["input", "change"],
+    }
+
+
+def test_time_fill_with_a_non_canonical_value_is_refused():
+    result = execute("time", {"value": "12:00"}, {"kind": "fill", "node": 1, "text": "25:99"})
+    assert result["confirmed"] is False
+    assert result["value"] == "12:00"
+
+
+def test_date_fill_with_a_non_canonical_value_restores_previous():
+    result = execute("date", {"value": "2026-10-18"}, {"kind": "fill", "node": 1, "text": "18/10/2026"})
+    assert result["confirmed"] is False
+    assert result["value"] == "2026-10-18"
+
+
+def test_textbox_fill_dispatches_mouse_and_keyboard_via_cdp(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    calls = []
+
+    def fake_cdp(method, session_id=None, **params):
+        calls.append((method, params))
+        if method == "Runtime.evaluate":
+            return {"result": {"value": {"x": 50, "y": 60, "native": False}}}
+        return {"result": {}}
+
+    monkeypatch.setattr(browser, "cdp", fake_cdp)
+    browser.browser_operation({
+        "operation": "act",
+        "session": "test-session",
+        "action": {"id": "e1", "kind": "fill", "node": 1},
+        "text": "hello",
+    })
+
+    methods = [m[0] for m in calls]
+    assert "Input.dispatchMouseEvent" in methods
+    assert "Input.dispatchKeyEvent" in methods
+    assert "Input.insertText" in methods
+
+
+def test_native_fill_short_circuits_mouse_and_keyboard_cdp(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    calls = []
+
+    def fake_cdp(method, session_id=None, **params):
+        calls.append((method, params))
+        if method == "Runtime.evaluate":
+            return {"result": {"value": {"x": 50, "y": 60, "native": True}}}
+        return {"result": {}}
+
+    monkeypatch.setattr(browser, "cdp", fake_cdp)
+    browser.browser_operation({
+        "operation": "act",
+        "session": "test-session",
+        "action": {"id": "e1", "kind": "fill", "node": 1},
+        "text": "2026-10-18",
+    })
+
+    methods = [m[0] for m in calls]
+    assert "Runtime.evaluate" in methods
+    assert "Input.dispatchMouseEvent" not in methods
+    assert "Input.dispatchKeyEvent" not in methods
+    assert "Input.insertText" not in methods
