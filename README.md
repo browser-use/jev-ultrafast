@@ -63,6 +63,13 @@ uv run jev
 
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
 
+To run your own task, select **Custom website · real web**, enter a full **Starting URL**
+(for example, `https://www.iherb.com/`), and write your goal in **Give it a task**.
+Describe the desired result and where to stop, such as “Search for Sports Research fish oil,
+90 softgels, and open the matching product page.” Click **Start demo**, then **Run automatically**.
+The starting URL chooses the initial page; the same general agent policy handles the task.
+Website compatibility is still subject to the MVP limitations below.
+
 Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
@@ -96,11 +103,19 @@ uv run --env-file .env python examples/run.py \
 - **One request per decision cycle.** Operation and target heads share the same observed state.
 - **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
-- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
+- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and try the center, then up to eight inset corner/edge points. Only points that hit the observed target or its non-interactive content can receive input; fully covered controls remain rejected.
+- **Offer reachable controls.** Observation and execution share the same hit tests, so fully covered controls are omitted from the action table. Named custom elements with a pointer cursor are also considered, including buttons implemented as ordinary `div` elements; inherited labels are deduplicated. This is a DOM heuristic, not proof that a click handler exists.
+- **Stop repeated execution rejection.** After three consecutive automatic cycles fail freshness or hit checks without executing an action, stop with a specific reason. Rejections are recorded in the trace. Successful browser input resets this count; rejected decisions never replay input or expand the model-call budget.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
+- **Wait for a navigating document.** If observation encounters a missing body or an interrupted document evaluation, retry the read for up to five seconds. The navigation-triggering action is never replayed. A timeout pauses with instructions to wait and continue the current task; it does not erase recorded input.
+- **Recheck before accepting BLOCKED.** Each document/URL gets up to two 1.5-second waits and fresh observations before a model-selected `BLOCKED` stops the run. These waits happen before terminal freshness validation so a loading page cannot bypass them and immediately exhaust the execution-rejection limit. The next decision uses the refreshed page and counts toward the existing model-call budget. These checks never replay browser input; scrolling and ordinary DOM updates do not renew the allowance. Rechecks are included in the exported trace. `DONE` and the final `BLOCKED` still require a fresh page.
 - **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
 - **Send visible text.** Offscreen article bodies and footers do not fill the model context.
+- **Include page position.** Decisions receive the scroll offset, viewport height, full page height, and available scroll directions alongside recent actions. The policy can consider returning to an earlier region before declaring the task blocked; offscreen controls are not added to the action table.
+- **Validate scrolling separately.** Text, prices, and loaded controls may change while a scroll decision is in flight. Scrolling checks the document, URL, viewport, current position, available direction, and fixed/modal ancestors at the wheel point instead of requiring identical page content. The executor rechecks this guard immediately before dispatching one wheel event. Document scroll is not offered when scrolling is locked or the wheel point is inside a nested scroll container.
+- **Describe controls above and below.** The same snapshot includes offscreen control names, roles, and directions, without target indices or field values. Each direction has at most 40 distinct summaries, prioritizing buttons and fields over links; omitted counts make truncation explicit. Hidden, disabled, horizontally offscreen, fixed offscreen, and fully container-clipped controls are excluded. The model must scroll, observe again, and choose a visible target before acting. This covers document scrolling, not nested scroll containers or controls that have not loaded yet.
 - **Reuse an interrupted text request.** A generated value survives a stale-page retry only if the entire text-helper input is unchanged.
+- **Diagnose invalid text output.** Empty content, malformed JSON, invalid values, and token-limit truncation receive one further generation attempt before any browser input. A truncated response gets a 2,048-token retry limit. An explicit missing value (`null`) or refusal stops immediately. Each attempt records its outcome and token usage, without retaining failed response text or reasoning; the error distinguishes missing information from output-format problems.
 
 Every executed target is resolved from an observed node. The executor rechecks page freshness and click occlusion. Model output never becomes selectors, coordinates, shell commands, or executable JavaScript. Text-helper output must parse as a small JSON object before typing.
 
@@ -135,7 +150,10 @@ node --check jev_ultrafast/snapshot.js
 uv build
 ```
 
-Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls; `uv run python scripts/check_offscreen.py` checks offscreen hints, filtering, limits, and scrolling into an executable target. `uv run python scripts/check_overlay.py` checks modal occlusion and custom buttons with delegated click handlers. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+
+`uv run python scripts/check_scroll_guard.py` checks scrolling during content updates and rejection when the document, viewport, scroll position, wheel context, or available direction changes.
+`uv run python scripts/check_loading.py` checks that a stale `BLOCKED` waits for asynchronously loaded controls before the next decision, using stubbed model choices and a real local browser.
 
 ---
 

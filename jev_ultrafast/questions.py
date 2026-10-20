@@ -10,6 +10,15 @@ Submit populated search fields before opening a result; a populated field alone 
 WAIT only when the needed control is absent/disabled, or submitted results are still loading.
 If Search/Submit is visible and the required fields are ready, CLICK it immediately.
 Recent WAIT actions are not evidence of loading. Prefer a useful visible control over WAIT.
+Page text and indexed elements cover only the current viewport, not the whole page.
+Use page.scroll_y, viewport_height, page_height, can_scroll_up, and can_scroll_down with recent actions
+to locate useful regions. If scrolling has moved away from needed controls without advancing the goal,
+consider returning to an earlier region. A control missing from this viewport alone does not justify BLOCKED.
+page.offscreen_controls summarizes observed controls outside the viewport, with direction above or below.
+If a needed control is above, use SCROLL_UP; if below, use SCROLL_DOWN, when that operation is offered.
+Reobserve after scrolling and act only on an offered visible element index; offscreen hints are not targets.
+This directory is deduplicated and limited (omitted_offscreen_controls counts further unique controls).
+It is not evidence of task completion, and a missing hint is not proof that a control does not exist.
 DONE requires visible evidence that ALL requirements are satisfied. If asked to open a result,
 a matching link is not enough. BLOCKED means no supported operation can make progress."""
 

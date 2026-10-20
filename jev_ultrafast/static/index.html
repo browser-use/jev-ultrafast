@@ -32,12 +32,20 @@
           <label for="goal">Give it a task</label
           ><select id="scenario" name="scenario" aria-label="Demo scenario">
             <option value="flights">Google Flights · real web</option>
+            <option value="custom">Custom website · real web</option>
             <option value="travel">Travel planner · fixture</option>
             <option value="research">Reading room · fixture</option>
           </select>
         </div>
+        <div id="start-url-field" class="start-url-field" hidden>
+          <label for="start-url">Starting URL</label>
+          <input id="start-url" name="url" type="url" maxlength="4096"
+            placeholder="https://example.com/" aria-describedby="start-url-help" disabled />
+          <small id="start-url-help">Jev opens this page first. Describe what to do and when to stop below.</small>
+        </div>
         <div class="task-row">
-          <textarea id="goal" name="goal" rows="5">
+          <textarea id="goal" name="goal" rows="5" required maxlength="2000"
+            placeholder="Describe your task and the result you want.">
 Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.</textarea
           ><button type="submit" id="start" class="primary">
             Start demo <span>↗</span>

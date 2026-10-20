@@ -21,11 +21,12 @@ def main():
         page = browser.observe(screenshot=False)
         action = next(a for a in page["actions"] if a["label"] == "Continue")
         browser.evaluate("document.querySelector('#target').style.transform='translateX(200px)'")
-        assert browser.fresh(page), "Movement should use fresh geometry, not another model call"
+        assert browser.fresh(page, action), "Movement should use fresh geometry, not another model call"
         browser.act(action, page)
         assert browser.evaluate("window.clicks") == 1
         passed.append("moving target clicked at its current location")
 
+        page = browser.observe(screenshot=False)
         browser.evaluate("document.querySelector('#outside').textContent='Updated outside the viewport'")
         assert browser.fresh(page)
         passed.append("unrelated offscreen text does not invalidate")
@@ -57,7 +58,7 @@ def main():
         browser.evaluate("const cover=document.createElement('div'); "
                          "cover.style.cssText='position:fixed;inset:0;z-index:9999;background:white'; "
                          "document.body.append(cover)")
-        assert browser.fresh(page)
+        assert not browser.fresh(page)
         try:
             browser.act(action, page)
         except (RuntimeError, StalePage):
@@ -66,6 +67,68 @@ def main():
             raise AssertionError("Covered target was clicked")
         assert browser.evaluate("window.clicks") == 1
         passed.append("overlay blocked before input")
+
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <style>
+            #card {position:absolute;left:40px;top:40px;width:240px;height:180px;background:#eee}
+            #cover {position:absolute;left:110px;top:100px;width:100px;height:60px;z-index:2}
+            #child {display:block;width:100%;height:100%}
+          </style>
+          <a id="card" href="#product" aria-label="Product"
+            onclick="event.preventDefault();window.productClicks++;window.lastPoint=[event.clientX,event.clientY]">
+            <span id="child">Product image</span>
+          </a>
+          <button id="cover" onclick="window.coverClicks++">Add to cart</button>
+        """) + ";window.productClicks=0;window.coverClicks=0")
+        page = browser.observe(screenshot=False)
+        card = next(a for a in page["actions"] if a["label"] == "Product")
+        browser.act(card, page)
+        assert browser.evaluate("window.productClicks") == 1
+        assert browser.evaluate("window.coverClicks") == 0
+        passed.append("partially covered link clicks its exposed area, not the overlay button")
+
+        browser.evaluate("document.querySelector('#cover').style.display='none'")
+        page = browser.observe(screenshot=False)
+        card = next(a for a in page["actions"] if a["label"] == "Product")
+        browser.act(card, page)
+        assert browser.evaluate("window.lastPoint") == [160, 130]
+        assert browser.evaluate("window.productClicks") == 2
+        passed.append("uncovered target still clicks its center through a non-interactive child")
+
+        browser.evaluate("const nested=document.createElement('button');nested.id='nested';"
+                         "nested.textContent='Separate action';"
+                         "nested.style.cssText='position:absolute;left:70px;top:60px;width:100px;height:60px';"
+                         "nested.onclick=event=>{event.preventDefault();event.stopPropagation();window.coverClicks++};"
+                         "document.querySelector('#card').append(nested)")
+        page = browser.observe(screenshot=False)
+        card = next(a for a in page["actions"] if a["label"] == "Product")
+        browser.act(card, page)
+        assert browser.evaluate("window.productClicks") == 3
+        assert browser.evaluate("window.coverClicks") == 0
+        passed.append("nested independent button is not clicked instead of its parent link")
+
+        browser.evaluate("document.querySelector('#nested').style.cssText="
+                         "'position:absolute;inset:0;width:100%;height:100%'")
+        covered = browser.observe(screenshot=False)
+        assert not any(a["label"] == "Product" for a in covered["actions"])
+        try:
+            browser.act(card, page)
+        except StalePage:
+            pass
+        else:
+            raise AssertionError("Fully covering nested button was clicked")
+        assert browser.evaluate("[window.productClicks,window.coverClicks]") == [3, 0]
+        passed.append("all candidate points blocked means no input is dispatched")
+
+        browser.evaluate("document.querySelector('#nested').remove()")
+        page = browser.observe(screenshot=False)
+        card = next(a for a in page["actions"] if a["label"] == "Product")
+        # Reuse the observed node after a geometry-only move takes its center outside the viewport.
+        browser.evaluate("document.querySelector('#card').style.left='-150px'")
+        browser.act(card, page)
+        assert browser.evaluate("window.productClicks") == 4
+        assert browser.evaluate("window.lastPoint[0]>=0") is True
+        passed.append("candidate points stay inside the viewport for a partially visible target")
 
         browser.evaluate("document.body.innerHTML=" + repr("""
           <form><p id="price">Total $10</p>

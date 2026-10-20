@@ -8,7 +8,10 @@ const goals = {
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
+  custom: "",
 };
+const drafts = { ...goals };
+let selectedScenario = $("scenario").value;
 const escape = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -35,6 +38,10 @@ function controls() {
   $("start").disabled = busy;
   $("scenario").disabled = busy;
   $("goal").disabled = busy;
+  const custom = $("scenario").value === "custom";
+  $("start-url-field").hidden = !custom;
+  $("start-url").disabled = busy || !custom;
+  $("start-url").required = custom;
   $("choose").disabled = busy || !live;
   $("execute").disabled = busy || !state?.decision || !live;
   $("auto").disabled = busy || !live;
@@ -82,11 +89,12 @@ function render() {
   const labels = {
     idle: "Ready to explore",
     ready: "Page observed · ready for a decision",
+    rechecking: "Page rechecked · ready for another decision",
     predicted: "Choice ready · inspect or execute",
     done: "Jev reports complete · inspect the page",
     blocked: "Stopped · no supported next action",
   };
-  $("status").textContent = labels[state.status] || state.status;
+  $("status").textContent = state.stop_reason || labels[state.status] || state.status;
   if (!page) {
     controls();
     return;
@@ -150,12 +158,24 @@ $("task-form").addEventListener("submit", (event) => {
   automatic = false;
   perform(
     () =>
-      call("reset", { scenario: $("scenario").value, goal: $("goal").value }),
+      call("reset", {
+        scenario: $("scenario").value,
+        goal: $("goal").value,
+        ...($("scenario").value === "custom" ? { url: $("start-url").value.trim() } : {}),
+      }),
     "Opening a fresh browser…",
   );
 });
 $("scenario").addEventListener("change", () => {
-  $("goal").value = goals[$("scenario").value];
+  const nextScenario = $("scenario").value;
+  drafts[selectedScenario] = $("goal").value;
+  // Keep a task the user already typed when they switch to a custom starting page.
+  if (nextScenario === "custom" && !drafts.custom && $("goal").value.trim() !== goals[selectedScenario]) {
+    drafts.custom = $("goal").value;
+  }
+  selectedScenario = nextScenario;
+  $("goal").value = drafts[selectedScenario];
+  controls();
 });
 $("choose").addEventListener("click", () =>
   perform(() => call("predict"), "Jev is comparing the actions…"),
@@ -237,6 +257,12 @@ fetch("/api/state")
   .then((r) => r.json())
   .then((s) => {
     state = s;
+    if (s.goal && Object.hasOwn(goals, s.scenario)) {
+      selectedScenario = s.scenario;
+      $("scenario").value = selectedScenario;
+      $("goal").value = drafts[selectedScenario] = s.goal;
+      $("start-url").value = s.start_url || "";
+    }
     render();
   })
   .catch(() => {

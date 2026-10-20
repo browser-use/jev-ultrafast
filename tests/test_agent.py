@@ -199,6 +199,93 @@ def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypa
     assert runner.pending_text is None
 
 
+def test_text_failure_is_recorded_without_browser_input_or_replay(runner, monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": [{"message": {"content": "malformed output"}}]})
+    monkeypatch.setattr(model, "post_json", post)
+
+    with pytest.raises(model.TextHelperError, match="malformed JSON"):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    assert post.call_count == 2
+    runner.state["browser"].act.assert_not_called()
+    assert runner.state["decision"] is None
+    assert runner.state["history"] == []
+    assert runner.pending_text is None
+    assert runner.state["status"] == "ready"
+    record = runner.state["text_calls"][0]
+    assert record["field"] == "Search"
+    assert record["error"] == "invalid_json"
+    assert len(record["attempts"]) == 2
+    assert "malformed output" not in str(record)
+    with pytest.raises(ValueError, match="Observe and choose"):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert post.call_count == 2
+
+
+def test_text_regeneration_executes_browser_input_only_once(runner, monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(side_effect=[
+        {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]},
+        {"choices": [{"message": {"content": '{"text":"book"}'}}]},
+    ])
+    monkeypatch.setattr(model, "post_json", post)
+
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    assert post.call_count == 2
+    runner.state["browser"].act.assert_called_once()
+    assert runner.state["browser"].act.call_args.kwargs["text"] == "book"
+    assert len(runner.state["history"]) == 1
+    assert len(runner.state["text_calls"][0]["attempts"]) == 2
+
+
+def test_repeated_pre_execution_rejections_stop_before_exhausting_model_budget(runner, monkeypatch):
+    choose = Mock(return_value={**decision("e3"), "operation": "CLICK"})
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.state["browser"].act.side_effect = StalePage("Target changed or is covered. Observe again.")
+
+    for _ in range(loop.MAX_CONSECUTIVE_REJECTIONS):
+        runner.command("tick")
+
+    assert runner.state["status"] == "blocked"
+    assert "prevented execution" in runner.state["stop_reason"]
+    assert choose.call_count == loop.MAX_CONSECUTIVE_REJECTIONS
+    assert runner.state["history"] == []
+    assert len(runner.state["rejections"]) == loop.MAX_CONSECUTIVE_REJECTIONS
+    assert all(r["stage"] == "act" and not r["after_execution"] for r in runner.state["rejections"])
+    with pytest.raises(ValueError, match="run has stopped"):
+        runner.command("tick")
+    assert choose.call_count == loop.MAX_CONSECUTIVE_REJECTIONS
+
+
+def test_successful_input_resets_rejection_count_even_if_observation_changes(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("e3"), "operation": "CLICK"}))
+    runner.state["consecutive_rejections"] = 2
+    runner.state["browser"].observe.side_effect = [StalePage("Navigating"), page()]
+
+    runner.command("tick")
+
+    assert runner.state["status"] == "ready"
+    assert runner.state["consecutive_rejections"] == 0
+    assert len(runner.state["history"]) == 1
+    runner.state["browser"].act.assert_called_once()
+    assert runner.state["rejections"][-1]["after_execution"]
+
+
+def test_budget_exhaustion_is_a_stopped_state(runner, monkeypatch):
+    choose = Mock()
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.state["decisions"] = [decision()] * (loop.MAX_STEPS * 2)
+
+    with pytest.raises(ValueError, match="model-call budget"):
+        runner.command("predict")
+
+    assert runner.state["status"] == "blocked"
+    assert runner.state["stop_reason"] == "Stopped · model-call budget reached"
+    choose.assert_not_called()
+
+
 def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch):
     helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
     monkeypatch.setattr(loop, "field_text", helper)
@@ -224,6 +311,21 @@ def test_stale_observation_preserves_executed_action(runner):
     with pytest.raises(StalePage):
         runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     assert runner.state["history"][-1]["action"] == "Go"
+    runner.state["browser"].act.assert_called_once()
+
+
+def test_navigation_timeout_preserves_action_and_cannot_replay_it(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value={**decision("e3"), "operation": "CLICK"}))
+    runner.state["browser"].observe.side_effect = RuntimeError("Page is still loading.")
+
+    with pytest.raises(RuntimeError, match="Page is still loading"):
+        runner.command("tick")
+
+    assert len(runner.state["history"]) == 1
+    assert runner.state["history"][0]["action"] == "Go"
+    assert runner.state["decision"] is None
+    with pytest.raises(ValueError, match="Observe and choose"):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     runner.state["browser"].act.assert_called_once()
 
 

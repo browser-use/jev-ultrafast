@@ -45,21 +45,44 @@ def command(name, body):
     global AGENT
     if name == "reset":
         scenario = body.get("scenario", "flights")
-        if scenario not in {"travel", "research", "flights"}:
+        if scenario not in {"travel", "research", "flights", "custom"}:
             raise ValueError("Unknown demo scenario")
         goal = body.get("goal", "").strip()
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
+        if scenario == "custom":
+            url = body.get("url", "")
+            if not isinstance(url, str):
+                raise ValueError("Enter a full starting URL beginning with http:// or https://")
+            url = url.strip()
+            try:
+                parsed = urlparse(url)
+                valid = (
+                    0 < len(url) <= 4096
+                    and parsed.scheme in {"http", "https"}
+                    and bool(parsed.hostname)
+                    and not any(character.isspace() for character in url)
+                )
+                parsed.port  # Reject malformed or out-of-range ports before closing the current task.
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("Enter a full starting URL beginning with http:// or https://")
+        else:
+            url = (
+                "https://www.google.com/travel/flights?hl=en"
+                if scenario == "flights"
+                else f"{ORIGIN}/fixture.html?scenario={scenario}"
+            )
         close_browser()
         AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
+            url,
             goal,
             screenshots=True,
             record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,
         )
         AGENT.state["scenario"] = scenario
+        AGENT.state["start_url"] = url
     else:
         if AGENT is None:
             raise ValueError("Start a demo first")

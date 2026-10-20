@@ -5,8 +5,12 @@ import time
 from pathlib import Path
 
 from .browser import Browser, StalePage
-from .model import action_space, choose, field_context, field_text
+from .model import TextHelperError, action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
+
+BLOCKED_RECHECK_DELAY = 1.5
+MAX_BLOCKED_RECHECKS = 2
+MAX_CONSECUTIVE_REJECTIONS = 3
 
 
 class Agent:
@@ -34,6 +38,9 @@ class Agent:
             plan=plan,
             plan_index=0,
             decisions=[],
+            blocked_rechecks=[],
+            rejections=[],
+            consecutive_rejections=0,
             text_calls=[],
             elapsed_ms=0,
             started_at=None,
@@ -53,12 +60,29 @@ class Agent:
         body = body or {}
         state = self.state
         if name == "tick":
+            before = len(state["history"])
+            stage, decision = "predict", None
             try:
                 self.command("predict", {})
+                stage, decision = "act", state["decision"]
                 return self.command("act", {"fingerprint": state["page"]["fingerprint"]})
-            except StalePage:
+            except StalePage as error:
                 state["decision"] = None
-                state["status"] = "ready"
+                executed = len(state["history"]) > before
+                state["consecutive_rejections"] = 0 if executed else state.get("consecutive_rejections", 0) + 1
+                state.setdefault("rejections", []).append({
+                    "stage": stage,
+                    "reason": str(error),
+                    "choice": decision["choice"] if decision else None,
+                    "after_execution": executed,
+                    "executed_actions": len(state["history"]),
+                })
+                stopped = state["consecutive_rejections"] >= MAX_CONSECUTIVE_REJECTIONS
+                state["status"] = "blocked" if stopped else "ready"
+                if stopped:
+                    state["stop_reason"] = (
+                        "Stopped · repeated page changes or covered targets prevented execution"
+                    )
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
@@ -73,6 +97,8 @@ class Agent:
             if state["status"] in {"done", "blocked"}:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
+                state["status"] = "blocked"
+                state["stop_reason"] = "Stopped · model-call budget reached"
                 raise ValueError("Reached the demo's model-call budget")
             state["decision"] = choose(state["page"], state["goal"], state["history"])
             state["decisions"].append(
@@ -91,6 +117,31 @@ class Agent:
             state["decision"] = None
             selected = decision["choice"]
             if selected in {"DONE", "BLOCKED"}:
+                if selected == "BLOCKED":
+                    # A new document/route gets a bounded chance to finish loading its controls.
+                    # Run this before terminal freshness validation: loading itself changes the page.
+                    document = page["page_key"][0]
+                    rechecks = state["blocked_rechecks"]
+                    attempts = sum(r["document"] == document and r["url"] == page["url"] for r in rechecks)
+                    if attempts < MAX_BLOCKED_RECHECKS and len(state["decisions"]) < MAX_STEPS * 2:
+                        recheck = {
+                            "document": document,
+                            "url": page["url"],
+                            "attempt": attempts + 1,
+                            "delay_ms": round(BLOCKED_RECHECK_DELAY * 1000),
+                            "page_changed": None,
+                        }
+                        # Consume the allowance before waiting, even if observation is interrupted.
+                        rechecks.append(recheck)
+                        state["status"] = "rechecking"
+                        time.sleep(BLOCKED_RECHECK_DELAY)
+                        state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                        state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                        recheck.update(
+                            page_changed=state["page"]["fingerprint"] != page["fingerprint"],
+                            elapsed_ms=state["elapsed_ms"],
+                        )
+                        return self.snapshot()
                 if not state["browser"].fresh(page):
                     state["status"] = "ready"
                     raise StalePage("Page changed since the decision. Choose again.")
@@ -110,11 +161,20 @@ class Agent:
                 if self.pending_text and self.pending_text[0] == context:
                     _, text, helper = self.pending_text
                 else:
-                    text, helper = field_text(context)
+                    try:
+                        text, helper = field_text(context)
+                    except TextHelperError as error:
+                        state["text_calls"].append({
+                            **error.metadata, "field": action["label"], "error": error.reason,
+                        })
+                        state["status"] = "ready"
+                        self.pending_text = None
+                        raise
                     self.pending_text = (context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
             state["browser"].act(action, page, text=text)
+            state["consecutive_rejections"] = 0
             self.pending_text = None
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             # Record execution before observing. A stale post-action observation must not erase the action.

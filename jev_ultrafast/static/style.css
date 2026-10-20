@@ -132,6 +132,25 @@ form {
   align-items: center;
   gap: 16px;
 }
+.start-url-field {
+  margin: 16px 0;
+}
+.start-url-field label,
+.start-url-field small {
+  display: block;
+  color: #77776e;
+  font-size: 12px;
+}
+#start-url {
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafaf7;
+  color: #343530;
+  font-size: 14px;
+}
 input,
 select,
 button {

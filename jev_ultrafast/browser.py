@@ -1,5 +1,6 @@
 """Observed actions through Browser Harness; one CDP session, no per-step subprocess."""
 
+import ast
 import hashlib
 import json
 import sys
@@ -12,6 +13,7 @@ from browser_harness.helpers import cdp
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+OBSERVATION_TIMEOUT = 5.0
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -74,18 +76,27 @@ class Browser:
                 )
             except RuntimeError:
                 pass
-        for attempt in range(10):
+        deadline = time.monotonic() + OBSERVATION_TIMEOUT
+        while True:
             try:
                 return browser_operation(
                     {"operation": "observe", "session": self.session, "screenshot": screenshot}
                 )
             except StalePage:
-                if attempt == 9:
-                    raise
-                time.sleep(0.02)
-        raise StalePage("Page did not settle")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        "Page is still loading. Wait for it to finish, then continue the current task."
+                    ) from None
+                # Retry only this read. The action that initiated navigation was already logged.
+                time.sleep(min(0.05, remaining))
 
     def fresh(self, page, action=None):
+        if action is not None and action["kind"] == "scroll":
+            expected = page.get("scroll_guard")
+            direction = "can_scroll_down" if action["delta"] > 0 else "can_scroll_up"
+            return bool(expected and expected.get(direction) and
+                        self.evaluate("window.__jevFast?.scrollGuard?.() ?? null") == expected)
         if action is not None and action["kind"] in {"click", "select"}:
             node = action["node"]
             if type(node) is not int:
@@ -99,21 +110,44 @@ class Browser:
 
     def act(self, action, page, text=None):
         if not self.fresh(page, action):
+            if action["kind"] == "scroll":
+                raise StalePage("Scroll position, direction, or wheel target changed. Observe again.")
             raise StalePage("Page changed since this decision. Observe again.")
         if action["kind"] == "wait":
             time.sleep(0.1)
-        result = browser_operation({"operation": "act", "session": self.session, "action": action, "text": text})
+        result = browser_operation({
+            "operation": "act", "session": self.session, "action": action, "text": text,
+            "scroll_guard": page.get("scroll_guard"),
+        })
         self.after_input = action if action["kind"] != "wait" else None
         return result
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
+            try:
+                cdp("Target.closeTarget", targetId=self.target)
+            except RuntimeError as error:
+                detail = error.args[0] if error.args else None
+                # Browser Harness can serialize the CDP error dict as a Python literal over IPC.
+                if isinstance(detail, str) and len(detail) <= 4096:
+                    try:
+                        detail = ast.literal_eval(detail)
+                    except (ValueError, SyntaxError):
+                        pass
+                # The user may already have closed this task's tab.
+                if not (
+                    isinstance(detail, dict)
+                    and detail.get("code") == -32602
+                    and detail.get("message") == "No target with given id found"
+                ):
+                    raise
             self.target = None
 
 
 def fingerprint(state):
     content = {k: state[k] for k in ("url", "text", "actions", "scroll")}
+    content["offscreen_controls"] = state.get("offscreen_controls", [])
+    content["omitted_offscreen_controls"] = state.get("omitted_offscreen_controls", {"above": 0, "below": 0})
     return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
@@ -136,7 +170,17 @@ def browser_operation(request):
         action = request["action"]
         kind = action["kind"]
         if kind == "scroll":
-            call("Input.dispatchMouseEvent", type="mouseWheel", x=550, y=650, deltaX=0, deltaY=action["delta"])
+            guard = request.get("scroll_guard")
+            direction = "can_scroll_down" if action["delta"] > 0 else "can_scroll_up"
+            if not guard or not guard.get(direction):
+                raise StalePage("No observed document scroll in this direction.")
+            point = evaluate("""(expected => {
+              const current=window.__jevFast?.scrollGuard?.();
+              return JSON.stringify(current)===JSON.stringify(expected) ? current.point : null;
+            })(""" + json.dumps(guard) + ")")
+            if point is None:
+                raise StalePage("Scroll position, direction, or wheel target changed. Observe again.")
+            call("Input.dispatchMouseEvent", type="mouseWheel", **point, deltaX=0, deltaY=action["delta"])
         elif kind != "wait":
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
@@ -146,9 +190,9 @@ def browser_operation(request):
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+              const point=window.__jevFast.hitPoint(e);
+              if (!point) return null;
+              const [x,y]=point;
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
