@@ -157,6 +157,31 @@ def test_missing_text_credential_stops_before_guessing(monkeypatch):
         model.field_text({"goal": 'Enter "Zurich"'})
 
 
+def test_reasoning_payload_is_provider_aware(monkeypatch):
+    """A DeepSeek base URL keeps its native disabled shape when reasoning is off."""
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.delenv("TEXT_MODEL_REASONING", raising=False)
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1")
+    model.field_text({"goal": "g"})
+    body = post.call_args.args[2]
+    assert body["thinking"] == {"type": "disabled"}
+    assert "reasoning" not in body
+
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    model.field_text({"goal": "g"})
+    body = post.call_args.args[2]
+    assert body["reasoning"] == {"enabled": False}
+    assert "thinking" not in body
+
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "low")
+    model.field_text({"goal": "g"})
+    body = post.call_args.args[2]
+    assert body["reasoning"] == {"effort": "low"}
+
+
 @pytest.fixture
 def runner():
     a = loop.Agent.__new__(loop.Agent)

@@ -163,9 +163,15 @@ def field_text(context):
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
     model = os.environ.get("TEXT_MODEL", "inception/mercury-2.5")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING", "none") == "none":
+    # The disabled payload is provider-specific: a DeepSeek base URL expects
+    # its native `thinking` shape, not the OpenRouter/Gemini `reasoning` one,
+    # and must keep it whether reasoning is disabled or requested.
+    if "api.deepseek.com/" in base:
+        reasoning = {"thinking": {"type": "disabled"}}
+    elif os.environ.get("TEXT_MODEL_REASONING", "none") == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    else:
+        reasoning = {"reasoning": {"effort": "low"}}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
