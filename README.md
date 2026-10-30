@@ -3,8 +3,8 @@
 # Jev Ultrafast ⚡
 
 > [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
+> **BU Ultrafast is live in Browser Use Cloud for every project.** For hosted ultrafast browser agents, set `model: "bu-ultrafast"`.
+> **[Learn more](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)** · **[Open Browser Use Cloud](https://cloud.browser-use.com?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
 
 **A browser agent with a dynamic, indexed action space.**
 
