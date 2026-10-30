@@ -3,7 +3,7 @@
 # Jev Ultrafast ⚡
 
 > [!IMPORTANT]
-> **BU Ultrafast is live in Browser Use Cloud for every project.** For hosted ultrafast browser agents, set `model: "bu-ultrafast"`.
+> **BU Ultrafast, Browser Use Cloud's own hosted agent, is live on every plan.** Set `model: "bu-ultrafast"` to use it.
 > **[Learn more](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)** · **[Open Browser Use Cloud](https://cloud.browser-use.com?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
 
 **A browser agent with a dynamic, indexed action space.**
