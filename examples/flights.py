@@ -10,7 +10,8 @@ from jev_ultrafast import Agent
 
 URL = "https://www.google.com/travel/flights?hl=en"
 GOALS = (
-    "Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. "
+    "Find round-trip flights from Senai International Airport (JHB) in Johor Bahru to Kota Kinabalu (BKI) in Sabah, "
+    "departing October 16, 2026 and returning October 21, 2026, for one adult in economy. "
     "Stop when matching flight options are visible. Do not select or book a flight."
 )
 
@@ -20,20 +21,26 @@ def verify(page):
     parsed = urlparse(page["url"])
     encoded = parse_qs(parsed.query).get("tfs", [""])[0]
     try:
-        date_in_url = b"2026-09-20" in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        dates_in_url = b"2026-10-16" in decoded and b"2026-10-21" in decoded
     except ValueError:
-        date_in_url = False
+        dates_in_url = False
     actions = page["actions"]
-    values = {a["label"].strip(): a.get("value") for a in actions}
+
+    def value(prefix):
+        # Result-page labels carry the value too ("Where from? Johor Bahru JHB"), so match by prefix.
+        return next((a.get("value") for a in actions if a["label"].strip().startswith(prefix)), None)
+
     flights = [a["label"] for a in actions if "Select flight" in a["label"]]
     checks = {
         "search_page": parsed.hostname == "www.google.com" and parsed.path == "/travel/flights/search",
-        "one_way": values.get("Change ticket type. One way") == "One way",
-        "origin": values.get("Where from?") == "Zürich",
-        "destination": values.get("Where to?") == "London",
-        "date": values.get("Departure") == "Sun, Sep 20",
-        "year": date_in_url or "departing 2026-09-20" in page["text"],
-        "results": bool(flights) and all("Sunday, September 20" in f for f in flights),
+        "round_trip": value("Change ticket type") == "Round trip",
+        "origin": value("Where from?") == "Johor Bahru",
+        "destination": value("Where to?") == "Kota Kinabalu",
+        "departure": value("Departure") == "Fri, Oct 16",
+        "return": value("Return") == "Wed, Oct 21",
+        "year": dates_in_url or ("2026-10-16" in page["text"] and "2026-10-21" in page["text"]),
+        "results": bool(flights) and all("Friday, October 16" in f for f in flights),
     }
     return {"passed": all(checks.values()), "checks": checks, "visible_flights": flights}
 
