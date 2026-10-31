@@ -162,6 +162,7 @@ def runner():
     a = loop.Agent.__new__(loop.Agent)
     a.screenshots = False
     a.pending_text = None
+    a.files = []
     p = page()
     a.state = {
         "browser": Mock(fresh=Mock(return_value=True), observe=Mock(return_value=p)),
@@ -318,3 +319,65 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def upload_page():
+    p = page()
+    p["actions"].insert(3, {
+        "id": "e4", "kind": "upload", "label": "Add media", "role": "file", "node": 40,
+        "accept": "image/*", "multiple": False, "value": "",
+    })
+    p["fingerprint"] = fingerprint(p)
+    return p
+
+
+def test_upload_is_offered_only_with_caller_files_and_never_leaks_paths(monkeypatch):
+    sent = []
+
+    def post(_url, _key, body):
+        sent.append(body)
+        operation = "UPLOAD_FILE" if "UPLOAD_FILE" in body["questions"]["operation"]["criteria"] else "BLOCKED"
+        answers = {"operation": choice(body["questions"]["operation"]["criteria"], operation)}
+        if "upload_file_target" in body["questions"]:
+            answers["upload_file_target"] = choice(body["questions"]["upload_file_target"]["criteria"], "3")
+        return {"model": "test", "answers": answers}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    assert model.choose(upload_page(), "Upload the slide", [])["choice"] == "BLOCKED"
+    assert "upload_file_target" not in sent[-1]["questions"]
+    # A single-file input cannot take two files.
+    assert model.choose(upload_page(), "Upload", [], ["/x/a.png", "/x/b.png"])["choice"] == "BLOCKED"
+    d = model.choose(upload_page(), "Upload the slide", [], ["/private/slides/slide-1.png"])
+    assert d["operation"] == "UPLOAD_FILE" and d["choice"] == "e4"
+    assert sent[-1]["questions"]["upload_file_target"]["criteria"]["3"]["accept"] == "image/*"
+    assert "slide-1.png" in json.dumps(sent[-1]) and "/private/slides" not in json.dumps(sent[-1])
+
+
+def test_upload_sets_caller_files_on_the_observed_node(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    cdp = Mock(side_effect=[{"result": {"objectId": "input-1"}}, {}])
+    monkeypatch.setattr(browser, "cdp", cdp)
+    action = upload_page()["actions"][3]
+    browser_operation({"operation": "act", "session": "s", "action": action, "files": ["/tmp/a.png"]})
+    assert "nodes.get(n)" in cdp.call_args_list[0].kwargs["expression"]
+    assert cdp.call_args_list[1].args[0] == "DOM.setFileInputFiles"
+    assert cdp.call_args_list[1].kwargs == {"session_id": "s", "files": ["/tmp/a.png"], "objectId": "input-1"}
+
+
+@pytest.mark.parametrize("response", [{"result": {"type": "object", "subtype": "null"}}, {"exceptionDetails": {}}])
+def test_upload_to_a_replaced_input_is_stale_before_any_mutation(monkeypatch, response):
+    import jev_ultrafast.browser as browser
+
+    cdp = Mock(return_value=response)
+    monkeypatch.setattr(browser, "cdp", cdp)
+    with pytest.raises(StalePage):
+        browser_operation({"operation": "act", "session": "s", "action": upload_page()["actions"][3],
+                           "files": ["/tmp/a.png"]})
+    assert cdp.call_count == 1
+
+
+def test_upload_needs_supplied_files_that_exist(tmp_path):
+    with pytest.raises(ValueError, match="not found"):
+        loop.Agent("about:blank", "Upload", files=[tmp_path / "missing.png"])

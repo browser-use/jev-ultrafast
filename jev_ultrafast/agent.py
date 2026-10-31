@@ -10,10 +10,14 @@ from .questions import MAX_STEPS
 
 
 class Agent:
-    def __init__(self, url, goals, *, record_dir=None, screenshots=False):
+    def __init__(self, url, goals, *, files=(), record_dir=None, screenshots=False):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
+        # Caller-owned upload paths. Only their names reach the model, state, and logs.
+        self.files = [str(Path(f).expanduser().resolve()) for f in files]
+        if missing := [f for f in self.files if not Path(f).is_file()]:
+            raise ValueError(f"Upload files not found: {missing}")
         plan = [task]
         self.pending_text = None
         self.browser = Browser(url)
@@ -74,7 +78,7 @@ class Agent:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
-            state["decision"] = choose(state["page"], state["goal"], state["history"])
+            state["decision"] = choose(state["page"], state["goal"], state["history"], self.files)
             state["decisions"].append(
                 {
                     **state["decision"],
@@ -114,7 +118,9 @@ class Agent:
                     self.pending_text = (context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
-            state["browser"].act(action, page, text=text)
+            if action["kind"] == "upload":
+                text = ", ".join(Path(f).name for f in self.files)
+            state["browser"].act(action, page, text=text, files=self.files)
             self.pending_text = None
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             # Record execution before observing. A stale post-action observation must not erase the action.
