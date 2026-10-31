@@ -77,6 +77,8 @@ def main():
           <input id="readonly" aria-label="Read only" readonly>
           <input id="secret" type="password" value="never expose this">
           <button id="off" disabled>Disabled</button>
+          <span id="file">report.pdf</span>
+          <button type="button" id="delete" aria-labelledby="delete file">Delete</button>
           <select id="category" aria-label="Category">
             <option>All</option><option>Design</option><option disabled>Unavailable</option>
           </select></form><aside id="unrelated">News</aside>
@@ -107,6 +109,8 @@ def main():
         assert not any(a["label"] == "Disabled" or a.get("value") == "never expose this" for a in actions)
         assert [a["value"] for a in actions if a["kind"] == "select"] == ["Design"]
         passed.append("native controls expose only supported operations and safe values")
+        assert "Delete report.pdf" in {a["label"] for a in actions}, [a["label"] for a in actions]
+        passed.append("a control listed in its own aria-labelledby keeps its own text")
 
         select = next(a for a in actions if a["kind"] == "select")
         browser.act(select, page)
