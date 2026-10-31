@@ -3,8 +3,14 @@ const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
   busy = false,
   automatic = false;
+// Google Flights renders no selectable cell for past dates, so the preset must roll forward.
+const flightDay = (() => {
+  const day = new Date();
+  day.setDate(day.getDate() + 21);
+  return day.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+})();
 const goals = {
-  flights: 'Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.',
+  flights: `Find one-way flights from Zurich to London on ${flightDay}, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.`,
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
@@ -96,7 +102,9 @@ function render() {
   $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
-  $("action-count").textContent = `${state.elements.length} elements`;
+  const settled = page.overlay_reads ? ` · ${page.overlay_reads} re-read${page.overlay_reads > 1 ? "s" : ""} for the overlay` : "";
+  $("action-count").textContent =
+    `${state.elements.length} elements${page.aria_hidden_fallback ? " · read through the hidden page" : ""}${settled}`;
   const chosen = page.actions.find((a) => a.id === d?.choice);
   $("choice-title").textContent = d
     ? chosen?.label || d.choice
@@ -132,7 +140,7 @@ function render() {
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
-  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
+  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s · ${state.cost.jev_calls} decision + ${state.cost.text_calls} text calls · ${state.cost.input_tokens.toLocaleString()} jev in tok · $${state.cost.usd.toFixed(4)}`;
   $("model-state").textContent = JSON.stringify(
     d?.request || {
       goal: state.goal,
@@ -233,6 +241,7 @@ $("download").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
 });
+$("goal").value = goals[$("scenario").value];
 fetch("/api/state")
   .then((r) => r.json())
   .then((s) => {

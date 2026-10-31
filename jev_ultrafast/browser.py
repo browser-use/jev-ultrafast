@@ -10,8 +10,13 @@ from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
+READ_STATE = Path(__file__).with_name("snapshot.js").read_text(encoding="utf-8")
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+
+# Sized by measurement: on Google Flights' ticket-type menu the hidden window opens 0.6 s after the
+# click, closes 2.2 s after it, and the menu's own option row is in the table 2.4 s after it. Typing a
+# city and opening the date picker never enter that state, so this budget is only ever spent on a menu.
+OVERLAY_SETTLE = 3.0
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -42,8 +47,12 @@ class Browser:
         return response.get("result", {}).get("value")
 
     def observe(self, screenshot=True):
-        if getattr(self, "after_input", None):
-            action, self.after_input = self.after_input, None
+        def read():
+            return browser_operation({"operation": "observe", "session": self.session, "screenshot": screenshot})
+
+        acted = getattr(self, "after_input", None)
+        if acted:
+            self.after_input = None
             # This is read-only and happens after execution was logged, even if navigation interrupts it.
             try:
                 self.call(
@@ -68,7 +77,7 @@ class Browser:
                         else requestAnimationFrame(ready);
                       };
                       requestAnimationFrame(ready);
-                    }))(""" + json.dumps(action) + ")",
+                    }))(""" + json.dumps(acted) + ")",
                     awaitPromise=True,
                     returnByValue=True,
                 )
@@ -76,14 +85,34 @@ class Browser:
                 pass
         for attempt in range(10):
             try:
-                return browser_operation(
-                    {"operation": "observe", "session": self.session, "screenshot": screenshot}
-                )
+                page = read()
+                break
             except StalePage:
                 if attempt == 9:
                     raise
                 time.sleep(0.02)
-        raise StalePage("Page did not settle")
+        else:
+            raise StalePage("Page did not settle")
+        # Two ways this table is still last frame's page after an input: the whole page is hidden behind an
+        # overlay being built, or the control just opened reports itself expanded while its own options have
+        # not reached the table (Google Flights' ticket-type menu does this with the page left visible).
+        opened = acted["id"] if acted else None
+        first, deadline, reads = page["fingerprint"], time.monotonic() + OVERLAY_SETTLE, 0
+        while acted and time.monotonic() < deadline and (
+            page.get("aria_hidden_fallback")
+            or (
+                page["fingerprint"] == first
+                and any(a["id"] == opened and a.get("expanded") == "true" for a in page["actions"])
+            )
+        ):
+            time.sleep(0.2)
+            try:
+                page = read()
+                reads += 1
+            except StalePage:
+                break
+        page["overlay_reads"] = reads
+        return page
 
     def fresh(self, page, action=None):
         if action is not None and action["kind"] in {"click", "select"}:
@@ -107,9 +136,18 @@ class Browser:
         return result
 
     def close(self):
-        if self.target:
+        if not self.target:
+            return
+        try:
             cdp("Target.closeTarget", targetId=self.target)
-            self.target = None
+        except (RuntimeError, OSError) as exc:
+            # Teardown has nothing to retry: the harness raises RuntimeError when the browser is
+            # already gone (the launcher's leave() can shut it down before an atexit close lands
+            # here) and OSError when the daemon socket is unreachable. Letting either escape an
+            # atexit callback prints a 13-line "Exception ignored" trace without changing the
+            # exit code, so the one line below carries the whole report.
+            print(f"Tab release did not land: {type(exc).__name__}: {exc}", file=sys.stderr)
+        self.target = None
 
 
 def fingerprint(state):
@@ -137,6 +175,10 @@ def browser_operation(request):
         kind = action["kind"]
         if kind == "scroll":
             call("Input.dispatchMouseEvent", type="mouseWheel", x=550, y=650, deltaX=0, deltaY=action["delta"])
+        elif kind == "escape":
+            # Not tied to an observed node: the point is to reach whatever the page keeps focused.
+            for event in ("keyDown", "keyUp"):
+                call("Input.dispatchKeyEvent", type=event, key="Escape", code="Escape", windowsVirtualKeyCode=27)
         elif kind != "wait":
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
@@ -190,5 +232,9 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
-        info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        # The tab was created with background=True, and a background tab never produces a frame,
+        # so captureScreenshot waits forever for one. Surfacing it measures 41ms vs 5849ms for the
+        # captureBeyondViewport=False workaround (and vs a guaranteed timeout otherwise).
+        call("Page.bringToFront")
+        info["screenshot"] = call("Page.captureScreenshot", _response_timeout=30, format="jpeg", quality=72)["data"]
     return info
