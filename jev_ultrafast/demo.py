@@ -18,20 +18,42 @@ ORIGIN = f"http://127.0.0.1:{PORT}"
 TOKEN = secrets.token_urlsafe(32)
 LOCK = threading.Lock()
 AGENT = None
+STATIC = {
+    "/": ("index.html", "text/html"),
+    "/app.js": ("app.js", "text/javascript"),
+    "/style.css": ("style.css", "text/css"),
+    "/fixture.html": ("fixture.html", "text/html"),
+}
+_ASSETS = {}
+
+
+def static_content(path):
+    """Served assets are fixed at startup; build each once instead of per request."""
+    content = _ASSETS.get(path)
+    if content is not None:
+        return content
+    if path == "/demo.mp4":
+        video = ROOT.parent / "docs" / "demo.mp4"
+        content = (video.read_bytes(), "video/mp4") if video.exists() else None
+    else:
+        name, mime = STATIC[path]
+        content = (ROOT / "static" / name).read_text(encoding="utf-8").replace("__TOKEN__", TOKEN).encode("utf-8"), mime
+    _ASSETS[path] = content
+    return content
 
 
 def load_environment():
     path = Path.cwd() / ".env"
     if path.exists():
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             if "=" in line and not line.startswith("#"):
                 key, value = line.split("=", 1)
-                os.environ.setdefault(key, value)
+                os.environ.setdefault(key, value.strip().strip("\"'"))
 
 
 def response_state():
     state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
+    return {**state, "text_model": os.environ.get("TEXT_MODEL", "inception/mercury-2.5"), "max_steps": MAX_STEPS}
 
 
 def close_browser():
@@ -85,21 +107,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             with LOCK:
                 return self.send(200, json.dumps(response_state()))
-        if path == "/demo.mp4":
-            video = ROOT.parent / "docs" / "demo.mp4"
-            if video.exists():
-                return self.send(200, video.read_bytes(), "video/mp4")
-        files = {
-            "/": ("index.html", "text/html"),
-            "/app.js": ("app.js", "text/javascript"),
-            "/style.css": ("style.css", "text/css"),
-            "/fixture.html": ("fixture.html", "text/html"),
-        }
-        if path not in files:
-            return self.send(404, "Not found", "text/plain")
-        name, mime = files[path]
-        content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
-        self.send(200, content, mime + "; charset=utf-8")
+        if path in STATIC or path == "/demo.mp4":
+            content = static_content(path)
+            if content is None:
+                return self.send(404, "Not found", "text/plain")
+            body, mime = content
+            return self.send(200, body, mime)
+        self.send(404, "Not found", "text/plain")
 
     def do_POST(self):
         if (

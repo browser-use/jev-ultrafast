@@ -4,6 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from fonts import resolve
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,9 +14,9 @@ frames = sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / "
 end_ms = state["elapsed_ms"]
 folder = ROOT / "artifacts/video-frames"
 folder.mkdir(parents=True, exist_ok=True)
-font_path = "/System/Library/Fonts/Menlo.ttc"
-font = ImageFont.truetype(font_path, 23)
-small = ImageFont.truetype(font_path, 17)
+mono_path = resolve("mono")
+font = ImageFont.truetype(mono_path, 23)
+small = ImageFont.truetype(mono_path, 17)
 images = []
 # 750 ms lead-in and 1,250 ms endpoint hold; action time itself is unmodified.
 for index in range(round((end_ms + 2000) * 30 / 1000)):

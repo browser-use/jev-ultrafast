@@ -318,3 +318,75 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_model_call_budget_blocks_after_max_steps_twice(runner, monkeypatch):
+    from jev_ultrafast.questions import MAX_STEPS
+
+    runner.state["decisions"] = [{"placeholder": i} for i in range(MAX_STEPS * 2)]
+    choose = Mock()
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.state["browser"].fresh.return_value = True
+    with pytest.raises(ValueError, match="model-call budget"):
+        runner.command("predict")
+    choose.assert_not_called()
+
+
+def test_empty_first_observation_reobserves_before_choosing(runner, monkeypatch):
+    empty = deepcopy(page())
+    empty["actions"] = []
+    empty["fingerprint"] = fingerprint(empty)
+    full = page()
+    runner.state["page"] = empty
+    runner.state["browser"].fresh.return_value = True
+    runner.state["browser"].observe.return_value = full
+    runner.state["decisions"] = []
+    choose = Mock(return_value=decision())
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.command("predict")
+    assert runner.state["page"]["actions"]  # Re-observed, not predicted BLOCKED on an empty page.
+    assert choose.call_count == 1
+    assert len(runner.state["page"]["actions"]) == len(full["actions"])
+
+
+@pytest.mark.parametrize("proxy", ["socks5://127.0.0.1:7890", "socks4://127.0.0.1:7890", "SOCKS5://c"])
+def test_socks_proxy_is_not_inherited_by_the_shared_client(monkeypatch, proxy):
+    # #16: ALL_PROXY=socks5://… is common on CN/corporate machines; the model client must still start
+    # without socksio, instead of crashing with ImportError at construction.
+    monkeypatch.setenv("ALL_PROXY", proxy)
+    client = model._http()
+    assert client is not None
+    monkeypatch.setattr(model, "_CLIENT", None)
+
+
+def test_http_proxy_explicit_override_wins_over_socks(monkeypatch):
+    monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:7890")
+    monkeypatch.setenv("TYPESAFE_HTTP_PROXY", "http://gate:8080")
+    assert model._http_proxy() == "http://gate:8080"
+
+
+def test_http_proxy_falls_back_to_https_but_never_socks(monkeypatch):
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:7890")
+    assert model._http_proxy() is None
+
+
+def test_screenshot_failure_is_optional(monkeypatch):
+    import copy
+
+    import jev_ultrafast.browser as browser
+
+    p = copy.deepcopy(page())
+
+    def cdp(method, **params):
+        if method == "Page.captureScreenshot":
+            raise RuntimeError("daemon too slow")
+        return {"result": {"value": p}} if method == "Runtime.evaluate" else {"data": "x"}
+
+    monkeypatch.setattr(browser, "cdp", cdp)
+    actual = browser.browser_operation({"operation": "observe", "session": "test", "screenshot": True})
+    assert actual["screenshot"] is None  # #14: a slow daemon must not stall the run.
+    assert actual["actions"] == p["actions"]

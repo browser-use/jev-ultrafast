@@ -6,6 +6,7 @@ import statistics
 import subprocess
 from pathlib import Path
 
+from fonts import resolve
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +21,8 @@ frames += sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / 
 end = state["elapsed_ms"]
 folder = source / "video-frames"
 folder.mkdir(parents=True, exist_ok=False)
-font_path = "/System/Library/Fonts/Supplemental/Arial.ttf"
-font_bold = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+font_path, font_bold = resolve("sans"), resolve("sans_bold")
+mono_path = resolve("mono")
 
 
 def font(n, bold=False):
@@ -29,7 +30,7 @@ def font(n, bold=False):
 
 
 def mono(n):
-    return ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", n)
+    return ImageFont.truetype(mono_path, n)
 
 
 ink, muted, green = "#172a20", "#6a766c", "#2a743f"

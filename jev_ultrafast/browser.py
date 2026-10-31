@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -11,20 +12,50 @@ from browser_harness.helpers import cdp
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
-MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+# Fast marker-only path skips the layout-heavy per-element guard scan; the marker never uses guards.
+MARKER = f"(() => {{ window.__jevFastSkipGuards=true; const state={READ_STATE}; return state?.marker ?? null; }})()"
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
 
 
+def _warn_if_attached_to_personal_browser():
+    """Warn when the harness attached to a browser that already has the user's tabs.
+
+    browser-harness probes (9222, 9223) and takes the first CDP endpoint that answers, which can be
+    the user's everyday Chrome. Pin it to a dedicated instance with BU_CDP_WS (see README) so the
+    agent never clicks inside a personal session.
+    """
+    try:
+        targets = cdp("Target.getTargets").get("targetInfos", [])
+    except Exception:
+        return
+    pages = [t for t in targets if t.get("type") == "page"]
+    current = [t for t in pages if t.get("url") and not t["url"].startswith("about:")]
+    if current:
+        sample = ", ".join(t.get("url") for t in current[:3])
+        print(
+            f"warning: attached to a browser already holding your tabs ({sample}{'…' if len(current) > 3 else ''}). "
+            "Set BU_CDP_WS to a dedicated Chrome for Testing instance (see README).",
+            file=sys.stderr,
+        )
+
+
 class Browser:
     def __init__(self, url):
         ensure_daemon()
-        self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
+        _warn_if_attached_to_personal_browser()
+        # A foreground owned tab prevents throttled painting of modal menus on some platforms (notably Windows).
+        foreground = os.environ.get("TYPESAFE_FOREGROUND") == "1" or os.environ.get("JEV_FOREGROUND") == "1"
+        self.target = cdp("Target.createTarget", url="about:blank", background=not foreground)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
         self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
-        # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
+        # Keep rAF/menus rendering in an owned tab, without activating the user's Chrome tab.
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
+        if foreground:
+            # Emulation alone does not give the tab foreground paint priority on Windows; only
+            # bringToFront does, and it is far faster than waiting for a backgrounded tab to paint.
+            self.call("Page.bringToFront")
         self.call("Page.navigate", url=url)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
@@ -50,10 +81,11 @@ class Browser:
                     "Runtime.evaluate",
                     expression="""(action => new Promise(resolve => {
                       const field=window.__jevFast?.nodes.get(action.node);
-                      const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
+                      const autocomplete=(action.kind==='fill'||action.kind==='click') &&
+                        field?.getAttribute('role')==='combobox';
                       let frames=0, stopped=false;
                       const finish=()=>{stopped=true;resolve()};
-                      setTimeout(finish,autocomplete ? 200 : 50);
+                      setTimeout(finish,autocomplete ? 300 : 50);
                       const ready=()=>{
                         if (stopped) return;
                         const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
@@ -190,5 +222,10 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
-        info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        try:
+            info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        except (RuntimeError, KeyError):
+            # Screenshots are optional and the model does not consume them; a slow daemon must not
+            # stall the run (e.g. during the first observation after launch).
+            info["screenshot"] = None
     return info

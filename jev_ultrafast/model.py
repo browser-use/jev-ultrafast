@@ -1,21 +1,56 @@
 """TypeSafe makes choices; an optional small OpenAI-compatible model writes field values."""
 
+import atexit
 import json
 import math
 import os
+import threading
 import time
 
 import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
-CLIENT = httpx.Client(http2=True, timeout=25)
+_CLIENT = None
+_CLIENT_LOCK = threading.Lock()
+
+
+def _http():
+    """Lazily build the shared client; HTTP/2 needs the optional h2 extra."""
+    global _CLIENT
+    if _CLIENT is None:
+        with _CLIENT_LOCK:
+            if _CLIENT is None:
+                timeout = float(os.environ.get("MODEL_TIMEOUT", "25"))
+                proxy = _http_proxy()
+                try:
+                    _CLIENT = httpx.Client(http2=True, timeout=timeout, trust_env=False, proxy=proxy)
+                except ImportError:
+                    if proxy and proxy.lower().startswith("socks"):
+                        proxy = None
+                    _CLIENT = httpx.Client(timeout=timeout, trust_env=False, proxy=proxy)
+                atexit.register(_CLIENT.close)
+    return _CLIENT
+
+
+def _http_proxy():
+    """Pick an HTTP(S) proxy for the API calls, ignoring SOCKS URLs.
+
+    The proxy environment can carry `ALL_PROXY=socks5://…` on CN/corporate machines. httpx turns a
+    SOCKS URL into an `ImportError` at client construction unless `socksio` is installed, so each
+    request would crash. Only forward http/https proxies; a SOCKS proxy needs `httpx[socks]`.
+    """
+    for name in ("TYPESAFE_HTTP_PROXY", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        url = os.environ.get(name)
+        if url and not url.lower().startswith("socks"):
+            return url
+    return None
 
 
 def post_json(url, key, body):
     for attempt in range(3):
         try:
-            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+            response = _http().post(url, json=body, headers={"Authorization": f"Bearer {key}"})
         except httpx.HTTPError:
             raise RuntimeError("Model connection failed; no action executed.") from None
         if response.status_code in {429, 529, 503} and attempt < 2:
@@ -23,8 +58,13 @@ def post_json(url, key, body):
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
-        return response.json()
-    raise RuntimeError("Model unavailable")
+        try:
+            return response.json()
+        except ValueError:
+            url_host = url.split("/api", 1)[0]
+            raise RuntimeError(
+                f"Model provider at {url_host} returned HTTP {response.status_code} with a non-JSON body."
+            ) from None
 
 
 def validate_choice(answer, ids):
@@ -55,31 +95,32 @@ def action_space(actions):
             controls[action["id"].upper()] = action
             continue
         node = action["node"]
-        if node not in indices:
-            index = str(len(elements) + 1)
-            indices[node] = index
+        element = indices.get(node)
+        if element is None:
             element = {k: action[k] for k in ("role", "value", "checked", "selected", "expanded") if k in action}
-            element.update(index=index, label=action["label"].split(" → ")[0], operations=[])
+            element.update(index=str(len(elements) + 1), label=action["label"].split(" → ")[0], operations=[])
             if kind == "select":
                 element["value"] = action.get("current_value", "")
                 element["options"] = []
+            indices[node] = element
             elements.append(element)
-        index = indices[node]
         operation = operations[kind]
         group = targets.setdefault(operation, {})
-        element = elements[int(index) - 1]
         if operation not in element["operations"]:
             element["operations"].append(operation)
-        target = index
+        target = element["index"]
         if kind == "select":
-            target = f"{index}:{len(element['options']) + 1}"
+            target = f"{target}:{len(element['options']) + 1}"
             element["options"].append({"index": target, "label": action["label"], "value": action["value"]})
         group[target] = action
     return elements, targets, controls
 
 
-def choose(state, goal, history):
-    elements, targets, controls = action_space(state["actions"])
+def choose(state, goal, history, space=None):
+    if space is None:
+        elements, targets, controls = action_space(state["actions"])
+    else:
+        elements, targets, controls = space
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
         "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
@@ -116,7 +157,11 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    result = post_json(
+        os.environ.get("TYPESAFE_BASE_URL", "https://api.typesafe.ai/v1").rstrip("/") + "/systemone",
+        os.environ["TYPESAFE_API_KEY"],
+        body,
+    )
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
@@ -152,7 +197,7 @@ def field_context(goal, action, page, history):
     return {
         "goal": goal,
         "field": {k: action.get(k) for k in ("label", "role", "value")},
-        "page": {"title": page["title"], "text": page["text"][:6000]},
+        "page": {"title": page["title"], "text": page["text"]},
         "recent_actions": [{k: h.get(k) for k in ("action", "text")} for h in history[-6:]],
     }
 
@@ -160,12 +205,20 @@ def field_context(goal, action, page, history):
 def field_text(context):
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
-        raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
-    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-    model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
+        raise ValueError(
+            "TYPE_TEXT needs TEXT_MODEL_API_KEY (see .env.example). "
+            "No text is hardcoded or guessed by the executor."
+        )
+    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+    model = os.environ.get("TEXT_MODEL", "inception/mercury-2.5")
+    reasoning = {}
+    mode = os.environ.get("TEXT_MODEL_REASONING", "").lower()
+    if mode == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    elif mode in {"low", "medium", "high"}:
+        reasoning = {"reasoning": {"effort": mode}}
+    elif "api.deepseek.com/" in base:
+        reasoning = {"thinking": {"type": "disabled"}}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",

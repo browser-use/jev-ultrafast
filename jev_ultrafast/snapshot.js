@@ -1,4 +1,6 @@
 (() => {
+  const skipGuards = window.__jevFastSkipGuards === true;
+  window.__jevFastSkipGuards = false;
   if (!document.body) return null;
   const cache = window.__jevFast ||= {ids:new WeakMap(), nodes:new Map(), next:1};
   const identity = e => {
@@ -79,6 +81,46 @@
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
   }
+  // Second pass: clickable non-native controls. Sites build dropdown/list rows from bare <li>/<div>/<span>
+  // with their own click handlers and no ARIA role; the fixed native selector never matches them, so those
+  // rows are invisible to the policy even though the user can click them. Keep this pass narrow so the
+  // element table stays small: a pointer-cursor row in a positioned layer or a pointer-cursor sibling
+  // list, no nested form control, innermost rows only, capped. Style reads are bounded so large pages
+  // (e.g. the search-result demo) do not pay for scanning every element.
+  const pointerRows = [];
+  const cap = 60;
+  let styleReads = 0;
+  const isPointer = el => {
+    if (styleReads >= 400) return false;
+    styleReads++;
+    return getComputedStyle(el).cursor === 'pointer';
+  };
+  const inLayerOrList = el => {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      if (styleReads < 400 && getComputedStyle(p).position !== 'static') return true;
+      let pointerSibling = 0;
+      for (let s = p.firstElementChild; s; s = s.nextElementSibling) if (s !== el && isPointer(s)) pointerSibling++;
+      if (pointerSibling) return true;
+    }
+    return false;
+  };
+  for (const el of document.querySelectorAll('li,div,span,td,[onclick]')) {
+    if (pointerRows.length >= cap) break;
+    if (!el.className && !el.hasAttribute('onclick')) continue;
+    if (el.querySelector('button,input,textarea,select,a[href]')) continue;
+    if (!isPointer(el) || !inLayerOrList(el)) continue;
+    pointerRows.push(el);
+  }
+  const rowContainers = new Set(pointerRows.filter(inner => pointerRows.some(other => other !== inner && inner.contains(other))));
+  for (const el of pointerRows) {
+    if (actions.length >= 250 - cap || rowContainers.has(el)) continue;
+    if (!safe(el) || !visible(el) || el.matches(':disabled') || el.closest('[aria-disabled="true"]')) continue;
+    const r = el.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+    if (r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    const label = name(el) || '';
+    if (label) actions.push({node:identity(el), role:'button', label:label.slice(0,120),
+      rect:{x:r.x,y:r.y,w:r.width,h:r.height}, kind:'click', value:''});
+  }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   const range=document.createRange(); let node,length=0;
   while ((node=walker.nextNode()) && length<6000) {
@@ -91,7 +133,7 @@
   }
   const text=words.join('\n').slice(0,6000), height=document.documentElement.scrollHeight;
   const page_key=cache.pageKey(), guards={};
-  for (const a of actions) if (!(a.node in guards)) guards[a.node]=cache.guard(cache.nodes.get(a.node));
+  if (!skipGuards) for (const a of actions) if (!(a.node in guards)) guards[a.node]=cache.guard(cache.nodes.get(a.node));
   // Compare meaning and identity. Geometry is always resolved and hit-tested just before input.
   const semantics=actions.map(({rect,...action})=>action);
   const marker=[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,

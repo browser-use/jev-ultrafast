@@ -17,6 +17,7 @@ class Agent:
         plan = [task]
         self.pending_text = None
         self.browser = Browser(url)
+        self.space_cache = None
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
         try:
@@ -43,10 +44,23 @@ class Agent:
             self.record_dir.mkdir(parents=True, exist_ok=True)
             (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
 
+    def _space(self, page):
+        """Memoized element/operation/target tables plus an id->action index for a page snapshot."""
+        key = page["fingerprint"]
+        cache = getattr(self, "space_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        elements, targets, controls = action_space(page["actions"])
+        by_id = {action["id"]: action for action in page["actions"]}
+        space = (elements, targets, controls, by_id)
+        self.space_cache = (key, space)
+        return space
+
     def snapshot(self):
+        elements = self._space(self.state["page"])[0]
         return {
             **{k: v for k, v in self.state.items() if k != "browser"},
-            "elements": action_space(self.state["page"]["actions"])[0],
+            "elements": elements,
         }
 
     def command(self, name, body=None):
@@ -74,7 +88,18 @@ class Agent:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
-            state["decision"] = choose(state["page"], state["goal"], state["history"])
+            elements, targets, controls = self._space(state["page"])[:3]
+            if not elements:
+                # A first observation can hit the page before controls paint. Re-observe instead of predicting BLOCKED.
+                for _ in range(3):
+                    time.sleep(0.2)
+                    state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                    elements, targets, controls = self._space(state["page"])[:3]
+                    if elements:
+                        break
+            state["decision"] = choose(
+                state["page"], state["goal"], state["history"], space=(elements, targets, controls)
+            )
             state["decisions"].append(
                 {
                     **state["decision"],
@@ -98,7 +123,8 @@ class Agent:
                 state["plan_index"] = int(selected == "DONE")
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
-            action = next(a for a in page["actions"] if a["id"] == selected)
+            _, _, _, by_id = self._space(page)
+            action = by_id[selected]
             if len(state["history"]) >= MAX_STEPS:
                 state["status"] = "blocked"
                 raise ValueError(f"Stopped at the {MAX_STEPS}-action demo budget")
@@ -146,7 +172,7 @@ class Agent:
                 url=state["page"]["url"],
                 elapsed_ms=state["elapsed_ms"],
             )
-            if state["record"]:
+            if state["record"] and state["page"].get("screenshot"):
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )
