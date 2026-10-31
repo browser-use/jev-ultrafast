@@ -21,12 +21,16 @@ AGENT = None
 
 
 def load_environment():
-    path = Path.cwd() / ".env"
-    if path.exists():
-        for line in path.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key, value)
+    for name in (".env.local", ".env"):
+        path = Path.cwd() / name
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if "=" in line and not line.startswith("#"):
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+    if "GEMINI_API_KEY" in os.environ and "TEXT_MODEL_API_KEY" not in os.environ:
+        os.environ["TEXT_MODEL_API_KEY"] = os.environ["GEMINI_API_KEY"]
+
 
 
 def response_state():
@@ -98,7 +102,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in files:
             return self.send(404, "Not found", "text/plain")
         name, mime = files[path]
-        content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
+        content = (ROOT / "static" / name).read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)
         self.send(200, content, mime + "; charset=utf-8")
 
     def do_POST(self):

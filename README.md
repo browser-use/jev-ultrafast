@@ -67,6 +67,16 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+### Optional Browser Use managed browser
+
+The local Jev integration remains the default. To keep Jev as the decision engine while moving only its browser to Browser Use Cloud, put `BROWSER_USE_API_KEY` in the server-side `.env.local` file and run:
+
+```powershell
+python -m uv run jev-cloud
+```
+
+Open the local inspector, enter the same natural-language goal as usual, and start the run. This path uses `browser-use-sdk` to create one managed browser, connects the existing indexed Jev loop over CDP, and stops the daemon and managed browser on normal exit or interruption. Creation is never retried after an ambiguous failure. The browser has a 15-minute server timeout and its managed proxy is disabled by default to limit cost. Browser Infrastructure does not accept the hosted-agent `model` or `max_cost_usd` options—`gpt-5.6-luna` and the $1 cap apply only to hosted agent runs. Tests use mocks and never call the paid API.
+
 ## Use the library
 
 ```python

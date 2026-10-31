@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "skillPath": "skills/agent-browser/SKILL.md",
+      "computedHash": "80161e6836b3b40f4e83730a290deb40ac14d877d38c97ad5f6d71be37ce74c3"
+    },
+    "jev-browser-use": {
+      "source": "wy-coliney/jev-browser-use",
+      "sourceType": "github",
+      "skillPath": "skills/jev-browser-use/SKILL.md",
+      "computedHash": "54a9fd4832a3f3ec2e53c7a434e3dec50fe4f5f4ff72dd32828077fa9474d066"
+    }
+  }
+}

@@ -3,11 +3,26 @@
 import json
 import math
 import os
+import socket
 import time
 
 import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
+
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _fallback_getaddrinfo(host, port, *args, **kwargs):
+    try:
+        return _orig_getaddrinfo(host, port, *args, **kwargs)
+    except socket.gaierror:
+        if host == "api.typesafe.ai":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("44.227.31.201", port))]
+        raise
+
+
+socket.getaddrinfo = _fallback_getaddrinfo
 
 CLIENT = httpx.Client(http2=True, timeout=25)
 
@@ -78,6 +93,103 @@ def action_space(actions):
     return elements, targets, controls
 
 
+def choose_llm(operations, targets, state, goal, history):
+    key = os.environ.get("TEXT_MODEL_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise ValueError("Neither TYPESAFE_API_KEY nor TEXT_MODEL_API_KEY was provided.")
+    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    model = os.environ.get("TEXT_MODEL", "deepseek-chat")
+    if "api.deepseek.com/" in base:
+        reasoning = {"thinking": {"type": "disabled"}}
+    elif "generativelanguage.googleapis.com" in base:
+        reasoning = {}
+    elif os.environ.get("TEXT_MODEL_REASONING") == "none":
+        reasoning = {"reasoning": {"enabled": False}}
+    else:
+        reasoning = {"reasoning": {"effort": "low"}}
+
+    system_prompt = (
+        "You are an ultrafast browser agent controller. "
+        "Choose the single best NEXT action to advance the user's goal.\n"
+        f"{NEXT_ACTION}\n{TARGET}\n"
+        "Return a JSON object with exactly:\n"
+        "- \"operation\": one of the offered operations\n"
+        "- \"target\": the target element index string (e.g. \"1\", \"2\", \"3\") if the operation requires a target; "
+        "otherwise null."
+    )
+    user_payload = {
+        "goal": goal,
+        "page": {"url": state.get("url"), "title": state.get("title"), "text": state.get("text", "")[:3000]},
+        "recent_actions": [
+            {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
+        ],
+        "available_operations": operations,
+        "available_targets": {
+            op: {
+                idx: (
+                    f"[{idx}] {cand.get('label', '')} "
+                    f"(role: {cand.get('role', '')}, value: {cand.get('current_value', cand.get('value', ''))})"
+                )
+                for idx, cand in candidates.items()
+            }
+            for op, candidates in targets.items()
+        },
+    }
+    result = post_json(
+        base + "/chat/completions",
+        key,
+        {
+            "model": model,
+            "max_tokens": 512,
+            "response_format": {"type": "json_object"},
+            **reasoning,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(user_payload)},
+            ],
+        },
+    )
+    raw_content = result["choices"][0]["message"]["content"].strip()
+    if raw_content.startswith("```json"):
+        raw_content = raw_content[7:]
+    if raw_content.startswith("```"):
+        raw_content = raw_content[3:]
+    if raw_content.endswith("```"):
+        raw_content = raw_content[:-3]
+    try:
+        parsed = json.loads(raw_content.strip())
+    except json.JSONDecodeError:
+        parsed = {}
+
+    op = parsed.get("operation")
+    if op not in operations:
+        matches = [k for k in operations if k.lower() == str(op).lower()]
+        op = matches[0] if matches else ("DONE" if "DONE" in operations else next(iter(operations)))
+
+    answers = {
+        "operation": {
+            "choice": op,
+            "confidence": 1.0,
+            "probabilities": {k: float(k == op) for k in operations},
+        }
+    }
+    if op in targets:
+        target_candidates = targets[op]
+        tgt = str(parsed.get("target"))
+        if tgt not in target_candidates:
+            tgt = next(iter(target_candidates))
+        answers[op.lower() + "_target"] = {
+            "choice": tgt,
+            "confidence": 1.0,
+            "probabilities": {k: float(k == tgt) for k in target_candidates},
+        }
+    return {
+        "answers": answers,
+        "model": f"{model} (openrouter)",
+        "usage": result.get("usage", {}),
+    }
+
+
 def choose(state, goal, history):
     elements, targets, controls = action_space(state["actions"])
     labels = {
@@ -116,7 +228,11 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    typesafe_key = os.environ.get("TYPESAFE_API_KEY")
+    if typesafe_key:
+        result = post_json("https://api.typesafe.ai/v1/systemone", typesafe_key, body)
+    else:
+        result = choose_llm(operations, targets, state, goal, history)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
@@ -158,15 +274,46 @@ def field_context(goal, action, page, history):
 
 
 def field_text(context):
-    key = os.environ.get("TEXT_MODEL_API_KEY")
+    key = os.environ.get("TEXT_MODEL_API_KEY") or os.environ.get("GEMINI_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-    model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    model = os.environ.get("TEXT_MODEL", "gemini-3.8-flash")
     started = time.perf_counter()
+    if "generativelanguage.googleapis.com" in base or model.startswith("gemini"):
+        for attempt in range(4):
+            try:
+                from google import genai
+
+                client = genai.Client(api_key=key)
+                prompt = f"{TEXT_VALUE}\n\nContext:\n{json.dumps(context)}"
+                interaction = client.interactions.create(model=model, input=prompt)
+                output = json.loads(interaction.output_text.strip())
+                value = output["text"]
+                if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
+                    raise ValueError()
+                return value, {
+                    "model": model,
+                    "latency_ms": round((time.perf_counter() - started) * 1000),
+                    "usage": {},
+                }
+            except (ValueError, KeyError, TypeError):
+                raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+            except Exception as e:
+                err_str = str(e).lower()
+                if ("429" in err_str or "rate limit" in err_str or "resource_exhausted" in err_str) and attempt < 3:
+                    time.sleep(15 * (attempt + 1))
+                    continue
+                if attempt == 3:
+                    pass
+    if "api.deepseek.com/" in base:
+        reasoning = {"thinking": {"type": "disabled"}}
+    elif "generativelanguage.googleapis.com" in base:
+        reasoning = {}
+    elif os.environ.get("TEXT_MODEL_REASONING") == "none":
+        reasoning = {"reasoning": {"enabled": False}}
+    else:
+        reasoning = {"reasoning": {"effort": "low"}}
     result = post_json(
         base + "/chat/completions",
         key,
