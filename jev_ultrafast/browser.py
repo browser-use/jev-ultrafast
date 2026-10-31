@@ -51,20 +51,28 @@ class Browser:
                     expression="""(action => new Promise(resolve => {
                       const field=window.__jevFast?.nodes.get(action.node);
                       const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
-                      let frames=0, stopped=false;
+                      let frames=0, stopped=false; const start=performance.now();
                       const finish=()=>{stopped=true;resolve()};
-                      setTimeout(finish,autocomplete ? 200 : 50);
+                      const visibleOpt=e=>{
+                        const r=e.getBoundingClientRect();
+                        return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
+                          e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+                      };
                       const ready=()=>{
                         if (stopped) return;
                         const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
                           .split(/\\s+/).filter(Boolean);
                         const roots=ids.length ? ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
                         const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
-                        if (++frames>=2 && (!autocomplete || options.some(e=>{
-                          const r=e.getBoundingClientRect();
-                          return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
-                            e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-                        }))) finish();
+                        // A popup whose options already have geometry but are still fading in
+                        // (e.g. Material menus, ~1.5s on some machines) must not be observed as empty.
+                        const pending=options.filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;});
+                        const animating=pending.length>0 && !pending.some(visibleOpt);
+                        const cap=(autocomplete||animating) ? 1500 : 50;
+                        const elapsed=performance.now()-start;
+                        frames++;
+                        if (elapsed>=cap) finish();
+                        else if (frames>=2 && !animating && (!autocomplete || options.some(visibleOpt))) finish();
                         else requestAnimationFrame(ready);
                       };
                       requestAnimationFrame(ready);
