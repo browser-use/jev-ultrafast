@@ -227,6 +227,65 @@ def test_stale_observation_preserves_executed_action(runner):
     runner.state["browser"].act.assert_called_once()
 
 
+def test_init_does_not_accept_the_stale_about_blank_readystate(monkeypatch):
+    """Regression for #1: Target.createTarget opens about:blank, which is
+    already document.readyState == "complete" the instant it exists - before
+    Page.navigate's effects land. If the first poll after navigate() samples
+    that stale document, __init__ returns immediately and observe() runs
+    against a page that never actually loaded. This simulates the real CDP
+    timeline (stale about:blank, then the real navigation's own
+    loading -> interactive -> complete) and evaluates the exact JS expression
+    the code sends against each simulated document, the same way a real page
+    would answer it - rather than hardcoding what the fix's expression looks
+    like.
+    """
+    import jev_ultrafast.browser as browser
+
+    monkeypatch.setattr(browser, "ensure_daemon", Mock())
+    monkeypatch.setattr(browser.time, "sleep", lambda _: None)
+
+    documents = [
+        {"URL": "about:blank", "readyState": "complete"},
+        {"URL": "about:blank", "readyState": "complete"},
+        {"URL": "https://example.test/", "readyState": "loading"},
+        {"URL": "https://example.test/", "readyState": "interactive"},
+        {"URL": "https://example.test/", "readyState": "complete"},
+    ]
+    polls = []
+
+    def fake_cdp(method, **params):
+        if method == "Target.createTarget":
+            return {"targetId": "T1"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "S1"}
+        if method == "Runtime.evaluate":
+            doc = documents[min(len(polls), len(documents) - 1)]
+            polls.append(doc)
+            # Substitute the simulated document into the *actual* JS expression the
+            # code sends, then translate JS's strict-equality operators to Python's -
+            # this expression only ever uses simple string equality/inequality.
+            expression = (
+                params["expression"]
+                .replace("document.readyState", repr(doc["readyState"]))
+                .replace("document.URL", repr(doc["URL"]))
+                .replace("===", "==")
+                .replace("!==", "!=")
+                .replace("&&", "and")
+            )
+            value = eval(expression)  # noqa: S307 - fixed test expression, not external input
+            return {"result": {"value": value}}
+        return {}
+
+    monkeypatch.setattr(browser, "cdp", fake_cdp)
+
+    browser.Browser("https://example.test/")
+
+    assert polls[-1]["URL"] != "about:blank" and polls[-1]["readyState"] == "complete", (
+        "Browser.__init__ returned before the real navigation reached "
+        "readyState 'complete' - it accepted the stale about:blank document instead"
+    )
+
+
 def test_observation_is_one_atomic_browser_read(monkeypatch):
     import jev_ultrafast.browser as browser
 
