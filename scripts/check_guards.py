@@ -70,6 +70,7 @@ def main():
         browser.evaluate("document.body.innerHTML=" + repr("""
           <form><p id="price">Total $10</p>
           <button type="button" id="buy">Buy</button>
+          <button type="button" id="nonstop" aria-pressed="false">Nonstop</button>
           <label>Search <input id="query" role="combobox" aria-controls="suggestions"></label>
           <div role="listbox" id="suggestions"></div>
           <label><input id="check" type="checkbox">Enabled</label>
@@ -98,6 +99,14 @@ def main():
             browser.evaluate(expression)
             assert not browser.fresh(page, buy), label
             passed.append(label + " invalidates action-specific guard")
+
+        page = browser.observe(screenshot=False)
+        toggle = next(a for a in page["actions"] if a["label"] == "Nonstop")
+        assert toggle["pressed"] == "false", toggle
+        browser.evaluate("document.querySelector('#nonstop').setAttribute('aria-pressed','true')")
+        assert not browser.fresh(page, toggle)
+        assert browser.observe(screenshot=False)["fingerprint"] != page["fingerprint"]
+        passed.append("toggle button pressed state is observed and guarded")
 
         page = browser.observe(screenshot=False)
         actions = page["actions"]
