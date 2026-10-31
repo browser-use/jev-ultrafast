@@ -73,7 +73,7 @@ class Agent:
             if state["status"] in {"done", "blocked"}:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
-                raise ValueError("Reached the demo's model-call budget")
+                raise ValueError(f"Reached the {MAX_STEPS * 2}-call model budget (limit {MAX_STEPS} actions)")
             state["decision"] = choose(state["page"], state["goal"], state["history"])
             state["decisions"].append(
                 {

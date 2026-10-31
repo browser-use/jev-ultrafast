@@ -125,6 +125,8 @@ The same policy opened the requested Wikipedia article in **2.798 s** and passed
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
+**Budget Limits:** To prevent infinite loops, the agent restricts execution to a maximum of 60 successful browser actions and 120 total model calls (allowing for retries on stale pages).
+
 ## Development
 
 ```bash
