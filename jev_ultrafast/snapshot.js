@@ -76,7 +76,10 @@
       const value='value' in e ? String(e.value) :
         e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
       actions.push({...base,kind:editable?'fill':'click',value});
-      if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
+      if (editable) {
+        actions.push({...base,kind:'click',value,label:'Open '+base.label});
+        actions.push({...base,kind:'press',value,label:base.label});
+      }
     }
   }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);

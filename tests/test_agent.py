@@ -22,6 +22,7 @@ def page():
             {"id": "e1", "kind": "fill", "label": "Search", "role": "textbox", "value": "", "node": 10},
             {"id": "e2", "kind": "click", "label": "Open Search", "role": "textbox", "value": "", "node": 10},
             {"id": "e3", "kind": "click", "label": "Go", "role": "button", "value": "", "node": 20},
+            {"id": "e4", "kind": "press", "label": "Search", "role": "textbox", "value": "", "node": 10},
             {"id": "wait", "kind": "wait", "label": "Wait"},
         ],
     }
@@ -67,14 +68,16 @@ def test_invalid_choice_is_rejected(mutation):
 def test_one_index_per_node_with_operation_specific_targets():
     elements, targets, controls = model.action_space(page()["actions"])
     assert len(elements) == 2
-    assert elements[0]["operations"] == ["TYPE_TEXT", "CLICK"]
+    assert elements[0]["operations"] == ["TYPE_TEXT", "CLICK", "PRESS_ENTER"]
     assert targets["TYPE_TEXT"]["1"]["id"] == "e1"
     assert targets["CLICK"]["1"]["id"] == "e2"
     assert targets["CLICK"]["2"]["id"] == "e3"
+    assert targets["PRESS_ENTER"]["1"]["id"] == "e4"
     assert "WAIT" in controls
 
 
-def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
+@pytest.mark.parametrize("operation, action", [("TYPE_TEXT", "e1"), ("PRESS_ENTER", "e4")])
+def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch, operation, action):
     calls = []
 
     def post(_url, _key, body):
@@ -82,8 +85,8 @@ def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
         return {
             "model": "test",
             "answers": {
-                "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
-                "type_text_target": choice(["1"], "1"),
+                "operation": choice(body["questions"]["operation"]["criteria"], operation),
+                operation.lower() + "_target": choice(["1"], "1"),
                 "click_target": {"choice": "invented"},
             },
         }
@@ -92,18 +95,19 @@ def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
     monkeypatch.setattr(model, "post_json", post)
     d = model.choose(page(), "Find a book", [])
     assert len(calls) == 1
-    assert d["operation"] == "TYPE_TEXT" and d["target"] == "1" and d["choice"] == "e1"
-    assert set(calls[0]["questions"]) == {"operation", "click_target", "type_text_target"}
+    assert d["operation"] == operation and d["target"] == "1" and d["choice"] == action
+    assert set(calls[0]["questions"]) == {"operation", "click_target", "type_text_target", "press_enter_target"}
 
 
-def test_click_cannot_consume_a_text_target(monkeypatch):
+@pytest.mark.parametrize("operation", ["CLICK", "PRESS_ENTER"])
+def test_operation_cannot_consume_a_text_target(monkeypatch, operation):
     def post(_url, _key, body):
         return {
             "model": "test",
             "answers": {
-                "operation": choice(body["questions"]["operation"]["criteria"], "CLICK"),
+                "operation": choice(body["questions"]["operation"]["criteria"], operation),
                 "type_text_target": choice(["1"], "1"),
-                "click_target": choice(["1", "2", "999"], "999"),
+                operation.lower() + "_target": choice(["1", "2", "999"], "999"),
             },
         }
 
@@ -239,7 +243,8 @@ def test_observation_is_one_atomic_browser_read(monkeypatch):
     assert cdp.call_args.args[0] == "Runtime.evaluate"
 
 
-def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
+@pytest.mark.parametrize("index", [0, 3])
+def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch, index):
     import jev_ultrafast.browser as browser
 
     b = browser.Browser.__new__(browser.Browser)
@@ -247,7 +252,7 @@ def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     operation = Mock()
     monkeypatch.setattr(browser, "browser_operation", operation)
     with pytest.raises(StalePage):
-        b.act(page()["actions"][0], page(), "book")
+        b.act(page()["actions"][index], page(), "book")
     operation.assert_not_called()
 
 
@@ -318,3 +323,72 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_press_enter_uses_shared_cdp_after_resolving_and_focusing_target(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    cdp = Mock(return_value={"result": {"value": {"x": 100, "y": 50}}})
+    monkeypatch.setattr(browser, "cdp", cdp)
+    action = page()["actions"][3]
+    assert browser_operation({"operation": "act", "session": "test", "action": action}) == {"executed": "e4"}
+    assert [call.args[0] for call in cdp.call_args_list] == [
+        "Runtime.evaluate", "Input.dispatchMouseEvent", "Input.dispatchMouseEvent",
+        "Input.dispatchKeyEvent", "Input.dispatchKeyEvent",
+    ]
+    assert all(call.kwargs["session_id"] == "test" for call in cdp.call_args_list)
+    down, up = cdp.call_args_list[-2:]
+    assert down.kwargs == {
+        "session_id": "test", "type": "keyDown", "key": "Enter", "code": "Enter",
+        "windowsVirtualKeyCode": 13, "text": "\r",
+    }
+    assert up.kwargs == {
+        "session_id": "test", "type": "keyUp", "key": "Enter", "code": "Enter",
+        "windowsVirtualKeyCode": 13,
+    }
+
+
+def test_press_enter_rejects_unavailable_target_before_input(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    cdp = Mock(return_value={"result": {"value": None}})
+    monkeypatch.setattr(browser, "cdp", cdp)
+    with pytest.raises(StalePage, match="Target changed"):
+        browser_operation({"operation": "act", "session": "test", "action": page()["actions"][3]})
+    assert cdp.call_count == 1
+    assert cdp.call_args.args[0] == "Runtime.evaluate"
+
+
+def test_press_enter_skips_text_helper_and_records_before_observation(runner, monkeypatch):
+    helper = Mock(side_effect=AssertionError("Enter needs no generated text"))
+    monkeypatch.setattr(loop, "field_text", helper)
+    runner.state["decision"] = {**decision("e4"), "operation": "PRESS_ENTER"}
+    runner.state["browser"].observe.side_effect = StalePage("Navigation after Enter")
+    with pytest.raises(StalePage):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    helper.assert_not_called()
+    runner.state["browser"].act.assert_called_once_with(page()["actions"][3], runner.state["page"], text=None)
+    assert runner.state["history"][-1]["operation"] == "PRESS_ENTER"
+    assert runner.state["history"][-1]["text"] is None
+    assert runner.state["decision"] is None
+
+
+def test_interrupted_enter_is_consumed_without_retry(runner, monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    b = browser.Browser.__new__(browser.Browser)
+    b.session = "test"
+    b.fresh = Mock(return_value=True)
+    cdp = Mock(side_effect=[
+        {"result": {"value": {"x": 100, "y": 50}}}, {}, {}, RuntimeError("Interrupted keyDown"),
+    ])
+    monkeypatch.setattr(browser, "cdp", cdp)
+    runner.state["browser"] = b
+    runner.state["decision"] = {**decision("e4"), "operation": "PRESS_ENTER"}
+    with pytest.raises(RuntimeError, match="Interrupted keyDown"):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["decision"] is None
+    assert cdp.call_count == 4
+    with pytest.raises(ValueError, match="Observe and choose"):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert cdp.call_count == 4

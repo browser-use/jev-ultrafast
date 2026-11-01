@@ -145,7 +145,8 @@ def browser_operation(request):
               const e=window.__jevFast?.nodes.get(action.node);
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
-              if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
+              if (['fill','press'].includes(action.kind) && (e.readOnly || e.getAttribute('aria-readonly')==='true'))
+                return null;
               const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
               if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
               if (!e.contains(document.elementFromPoint(x,y))) return null;
@@ -183,6 +184,11 @@ def browser_operation(request):
                         modifiers=4 if sys.platform == "darwin" else 2,
                     )
                     call("Input.insertText", text=request["text"])
+                elif kind == "press":
+                    call("Input.dispatchKeyEvent", type="keyDown", key="Enter", code="Enter",
+                         windowsVirtualKeyCode=13, text="\r")
+                    call("Input.dispatchKeyEvent", type="keyUp", key="Enter", code="Enter",
+                         windowsVirtualKeyCode=13)
         return {"executed": action["id"]}
 
     info = evaluate(READ_STATE)

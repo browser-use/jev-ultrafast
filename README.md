@@ -28,7 +28,7 @@ Every observation produces a new element table:
 ...
 ```
 
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
+The operations are `CLICK`, `TYPE_TEXT`, `PRESS_ENTER`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered. `PRESS_ENTER` targets an observed editable field, focuses it, and presses Enter; this supports chat inputs without a send button and forms submitted from the keyboard.
 
 ```text
                       one TypeSafe request
@@ -36,6 +36,7 @@ The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `
 page → element table → operation                 │
                      │ click_target              │
                      │ type_text_target          │
+                     │ press_enter_target        │
                      │ select_target, if present │
                      └─────────────┬─────────────┘
                          use the matching target
