@@ -20,12 +20,56 @@ LOCK = threading.Lock()
 AGENT = None
 
 
+def parse_env_line(line):
+    """Return (key, value) for one .env line, or None when it is not an assignment."""
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    stripped_export = line[len("export") :] if line.startswith("export") else line
+    if stripped_export and stripped_export[0].isspace():
+        line = stripped_export.lstrip()
+    if not line or line.startswith("#"):
+        return None
+    if "=" not in line:
+        return None
+    key, _, value = line.partition("=")
+    key = key.strip()
+    if not key:
+        return None
+    # An inline comment starts at a '#' outside quotes that is preceded by
+    # whitespace, so TOKEN=abc#def keeps its '#' while KEY=abc # note drops it.
+    # Backslash-escaped quotes do not close a double-quoted value.
+    comment = None
+    quote = None
+    escaped = False
+    for index, char in enumerate(value):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\" and quote == '"':
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and index and value[index - 1].isspace():
+            comment = index
+            break
+    if comment is not None:
+        value = value[:comment]
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return key, value
+
+
 def load_environment():
     path = Path.cwd() / ".env"
     if path.exists():
         for line in path.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
+            parsed = parse_env_line(line)
+            if parsed:
+                key, value = parsed
                 os.environ.setdefault(key, value)
 
 
