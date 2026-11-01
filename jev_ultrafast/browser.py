@@ -143,12 +143,19 @@ def browser_operation(request):
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
             target = evaluate("""(action => {
               const e=window.__jevFast?.nodes.get(action.node);
-              if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
-                  !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
+              if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]')) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+              const point=el => {
+                if (!el.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
+                const r=el.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+                if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
+                return el.contains(document.elementFromPoint(x,y)) ? {x,y} : null;
+              };
+              // A visually hidden radio or checkbox is clicked through its own label, as a person would.
+              const toggle=action.kind==='click' && e.matches('input[type=radio],input[type=checkbox]');
+              const hit=point(e) || (toggle ? [...(e.labels||[])].map(point).find(Boolean) : null);
+              if (!hit) return null;
+              const {x,y}=hit;
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
