@@ -57,9 +57,23 @@
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    // Offer a control only if the act guard in browser.py would accept it: the same test,
+    // `e.contains(document.elementFromPoint(point))`. Otherwise a control clipped by a scroll
+    // container, under a consent iframe or cookie banner, or laid out behind other content is
+    // offered, refused at act time ("Target changed or is covered"), and chosen again after
+    // every re-observe. A link that wraps onto two lines has its box centre on the text between
+    // its fragments, so the centre of each visible fragment is tried next; the act guard uses
+    // the same fallback, so what is offered is what can be hit. A covered control is dropped
+    // from the offer below, after the marker is built: occlusion is geometry, and the marker
+    // deliberately compares meaning and identity only.
+    const covered=!e.contains(document.elementFromPoint(x,y)) &&
+      ![...e.getClientRects()].some(q => { const fx=q.x+q.width/2, fy=q.y+q.height/2;
+        return q.width>0 && q.height>0 && fx>=0 && fy>=0 && fx<innerWidth && fy<innerHeight &&
+          e.contains(document.elementFromPoint(fx,fy)); });
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+    if (covered) base.covered=true;
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;
@@ -90,10 +104,11 @@
     }
   }
   const text=words.join('\n').slice(0,6000), height=document.documentElement.scrollHeight;
+  // Compare meaning and identity. Geometry is always resolved and hit-tested just before input.
+  const semantics=actions.map(({rect,covered,...action})=>action);
+  actions.splice(0,actions.length,...actions.filter(a=>!a.covered));
   const page_key=cache.pageKey(), guards={};
   for (const a of actions) if (!(a.node in guards)) guards[a.node]=cache.guard(cache.nodes.get(a.node));
-  // Compare meaning and identity. Geometry is always resolved and hit-tested just before input.
-  const semantics=actions.map(({rect,...action})=>action);
   const marker=[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
     document.title,text,semantics,page_key[6]];
   const omitted_actions=Math.max(0,actions.length-250);
