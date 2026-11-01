@@ -179,11 +179,86 @@ def runner():
 
 
 def test_stale_decision_is_consumed_before_any_mutation(runner):
-    runner.state["browser"].fresh.return_value = False
+    runner.state["browser"].fresh.side_effect = StalePage("Document changed")
     with pytest.raises(StalePage):
         runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     runner.state["browser"].act.assert_not_called()
     assert runner.state["decision"] is None
+
+
+@pytest.mark.parametrize(
+    ("confidence", "target_confidence", "failed"),
+    [(0.79, 0.9, "operation"), (0.9, 0.79, "target")],
+)
+def test_confidence_gate_records_and_stops_before_browser_input(
+    runner, confidence, target_confidence, failed
+):
+    callback = Mock()
+    runner.confidence_floor = 0.8
+    runner.on_uncertain = callback
+    runner.state["decision"] = {
+        **decision(),
+        "confidence": confidence,
+        "target_confidence": target_confidence,
+    }
+
+    result = runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    event = runner.state["history"][-1]
+    assert result["status"] == "uncertain"
+    assert event["executed"] is False
+    assert event["reason"] == "below_confidence_floor"
+    assert event["failed_confidences"] == [failed]
+    runner.state["browser"].act.assert_not_called()
+    callback.assert_called_once_with(event)
+
+
+def test_uncertain_run_cannot_request_another_model_decision(runner):
+    runner.confidence_floor = 0.8
+    runner.state["decision"] = {
+        **decision(),
+        "confidence": 0.7,
+        "target_confidence": 0.7,
+    }
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    with pytest.raises(ValueError, match="This run has stopped"):
+        runner.command("predict")
+
+
+@pytest.mark.parametrize("kind", ["fill", "click", "select"])
+def test_stale_target_is_recorded_and_stops_before_browser_input(runner, kind):
+    p = runner.state["page"]
+    p["actions"].append({"id": "e4", "kind": "select", "label": "Sort", "role": "combobox", "value": "", "node": 30})
+    p["fingerprint"] = fingerprint(p)
+    choice_id = {"fill": "e1", "click": "e3", "select": "e4"}[kind]
+    runner.state["decision"] = decision(choice_id)
+    runner.state["browser"].fresh.return_value = False
+
+    result = runner.command("act", {"fingerprint": p["fingerprint"]})
+
+    event = runner.state["history"][-1]
+    assert result["status"] == "uncertain"
+    assert event["kind"] == kind
+    assert event["reason"] == "stale_target"
+    assert event["executed"] is False
+    assert result["elapsed_ms"] == event["elapsed_ms"]
+    runner.state["browser"].act.assert_not_called()
+
+
+def test_fill_recheck_records_stale_target_after_first_check_passes(runner, monkeypatch):
+    helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
+    monkeypatch.setattr(loop, "field_text", helper)
+    runner.state["browser"].fresh.side_effect = [True, False]
+
+    result = runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    event = runner.state["history"][-1]
+    assert runner.state["browser"].fresh.call_count == 2
+    assert result["status"] == "uncertain"
+    assert event["reason"] == "stale_target"
+    helper.assert_not_called()
+    runner.state["browser"].act.assert_not_called()
 
 
 def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypatch):
@@ -249,6 +324,18 @@ def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
     with pytest.raises(StalePage):
         b.act(page()["actions"][0], page(), "book")
     operation.assert_not_called()
+
+
+def test_fill_freshness_checks_the_observed_target_guard():
+    import jev_ultrafast.browser as browser
+
+    b = browser.Browser.__new__(browser.Browser)
+    b.evaluate = Mock(side_effect=[["page", "guard"], ["page", "changed"]])
+    observed = {"page_key": "page", "guards": {"10": "guard"}}
+    action = {"kind": "fill", "node": 10}
+
+    assert b.fresh(observed, action)
+    assert not b.fresh(observed, action)
 
 
 @pytest.mark.parametrize("response", [{"exceptionDetails": {}}, {"result": {}}])

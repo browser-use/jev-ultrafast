@@ -31,7 +31,7 @@ async function call(name, body = {}) {
   return data;
 }
 function controls() {
-  const live = state?.page && !["done", "blocked"].includes(state.status);
+  const live = state?.page && !["done", "blocked", "uncertain"].includes(state.status);
   $("start").disabled = busy;
   $("scenario").disabled = busy;
   $("goal").disabled = busy;
@@ -85,6 +85,10 @@ function render() {
     predicted: "Choice ready · inspect or execute",
     done: "Jev reports complete · inspect the page",
     blocked: "Stopped · no supported next action",
+    uncertain:
+      state?.uncertainty?.reason === "stale_target"
+        ? "Paused · the target changed before execution"
+        : "Paused · action confidence is below the floor",
   };
   $("status").textContent = labels[state.status] || state.status;
   if (!page) {
@@ -128,11 +132,12 @@ function render() {
     ? state.history
         .map(
           (h) =>
-            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
+            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability ?? h.target_confidence ?? h.confidence)}</span><span class="effect">${h.executed === false ? `Not executed · ${escape(h.reason)}` : h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
-  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
+  const executed = state.history.filter((h) => h.executed !== false).length;
+  $("step-count").textContent = `${executed} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
   $("model-state").textContent = JSON.stringify(
     d?.request || {
       goal: state.goal,
@@ -180,7 +185,7 @@ $("auto").addEventListener("click", () =>
       } else {
         await call("tick");
       }
-      if (["done", "blocked"].includes(state.status)) break;
+      if (["done", "blocked", "uncertain"].includes(state.status)) break;
     }
     automatic = false;
   }, "Running the browser…"),

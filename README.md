@@ -91,6 +91,21 @@ uv run --env-file .env python examples/run.py \
 
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
+Ordinary actions execute by default. To pause instead of executing actions when Jev is uncertain, set an opt-in confidence floor:
+
+```python
+with Agent(
+    url,
+    goal,
+    confidence_floor=0.75,
+    on_uncertain=lambda event: print("Paused:", event["reason"]),
+) as agent:
+    for state in agent.run():
+        print(state["status"])
+```
+
+The gate checks both operation and selected-target confidence. A rejected action is recorded with `executed=False`, and the run stops with `status == "uncertain"`. If the agent sees that the observed target changed before execution, the action is also rejected with `reason="stale_target"`. A change detected only inside browser execution still retries with a fresh observation instead of rejecting. The floor is a routing threshold for caller-controlled escalation, not a calibrated safety guarantee.
+
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
