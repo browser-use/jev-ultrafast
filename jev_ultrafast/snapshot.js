@@ -44,13 +44,16 @@
   cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
     [...document.querySelectorAll('input,textarea,select')].filter(safe)
       .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
+  const innerTextGetter=Object.getOwnPropertyDescriptor(HTMLElement.prototype,'innerText').get;
   cache.guard=e=>{
     if (!e?.isConnected || !visible(e)) return null;
     const scope=e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
+    // Named form controls can shadow the inherited innerText property.
+    const text=scope instanceof HTMLFormElement ? innerTextGetter.call(scope) : scope?.innerText;
     return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
-      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
+      e.getAttribute('href'),text?.slice(0,6000)||''];
   };
   const actions=[];
   for (const e of document.querySelectorAll(selector)) {
