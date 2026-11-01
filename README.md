@@ -91,6 +91,8 @@ uv run --env-file .env python examples/run.py \
 
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
+`uv run --env-file .env python examples/mdn.py --keep-open` opens the MDN HTML, CSS, and JavaScript topics in order by clicking links only, and checks the observed topic path before accepting the run. It does not type or submit anything.
+
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
