@@ -98,7 +98,7 @@ uv run --env-file .env python examples/run.py \
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
-- **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
+- **Keep the owned tab rendering.** Jev opens its tab in its own Chrome window and uses focus emulation, so it does not switch your visible tab. A background tab in your window is throttled (screenshots take 2-3 s). Keep that window visible: a minimized or fully covered window can be throttled again. Headless Chrome cannot open a new window, so there Jev falls back to a background tab.
 - **Send visible text.** Offscreen article bodies and footers do not fill the model context.
 - **Reuse an interrupted text request.** A generated value survives a stale-page retry only if the entire text-helper input is unchanged.
 
