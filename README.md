@@ -67,6 +67,8 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+`TYPESAFE_BASE_URL` is optional and defaults to `https://api.typesafe.ai/v1`; set it to route policy requests through a proxy or compatible endpoint. TypeSafe is also available through OpenRouter: use `TYPESAFE_BASE_URL=https://openrouter.ai/api/v1`, `TYPESAFE_MODEL=~typesafe/jev-latest`, and an OpenRouter key as `TYPESAFE_API_KEY`.
+
 ## Use the library
 
 ```python

@@ -318,3 +318,36 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_typesafe_base_url_defaults_for_unset_or_blank_and_strips_trailing_slash(monkeypatch):
+    seen = []
+
+    def post(url, _key, body):
+        seen.append(url)
+        return {
+            "model": "test",
+            "answers": {
+                "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
+                "type_text_target": choice(["1"], "1"),
+            },
+        }
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+
+    monkeypatch.delenv("TYPESAFE_BASE_URL", raising=False)
+    model.choose(page(), "Find a book", [])
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "")
+    model.choose(page(), "Find a book", [])
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "   ")
+    model.choose(page(), "Find a book", [])
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "https://gateway.example.com/typesafe/v1/")
+    model.choose(page(), "Find a book", [])
+
+    assert seen == [
+        "https://api.typesafe.ai/v1/systemone",
+        "https://api.typesafe.ai/v1/systemone",
+        "https://api.typesafe.ai/v1/systemone",
+        "https://gateway.example.com/typesafe/v1/systemone",
+    ]
