@@ -148,10 +148,15 @@ def choose(state, goal, history):
     }
 
 
-def field_context(goal, action, page, history):
+def field_context(goal, action, index, page, history):
+    field = {k: action.get(k) for k in ("label", "role", "value")}
+    field.update(index=index, node=action["node"])
+    guard = page.get("guards", {}).get(str(action["node"]))
+    if guard:
+        field["context"] = guard[-1][:1000]
     return {
         "goal": goal,
-        "field": {k: action.get(k) for k in ("label", "role", "value")},
+        "field": field,
         "page": {"title": page["title"], "text": page["text"][:6000]},
         "recent_actions": [{k: h.get(k) for k in ("action", "text")} for h in history[-6:]],
     }

@@ -50,6 +50,8 @@ Target questions are speculative. If the operation is `CLICK`, only `click_targe
 
 There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
 
+The text helper receives the selected field's observed element index and node identity, plus up to 1,000 characters of the existing freshness guard's surrounding scope text when available. Same-labeled fields therefore have distinct helper inputs; stale retries reuse text only when the whole helper input is unchanged.
+
 ## Try it
 
 ```bash

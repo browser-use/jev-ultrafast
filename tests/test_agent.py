@@ -144,7 +144,7 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
     monkeypatch.setattr(model, "post_json", post)
-    context = model.field_context('Fly from "Zurich" to London', page()["actions"][0], page(), [])
+    context = model.field_context('Fly from "Zurich" to London', page()["actions"][0], "1", page(), [])
     assert model.field_text(context)[0] == "Zurich"
     assert post.call_count == 1
     sent = json.loads(post.call_args.args[2]["messages"][1]["content"])
@@ -209,6 +209,37 @@ def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch
     runner.state["decision"] = decision()
     runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     assert helper.call_count == 2
+
+
+def test_same_labeled_fields_have_distinct_helper_context(runner, monkeypatch):
+    p = runner.state["page"]
+    second = {**p["actions"][0], "id": "e4", "node": 30}
+    p["actions"].append(second)
+    p["guards"] = {"10": ["Passenger 1\nSearch"], "30": ["Passenger 2\nSearch"]}
+    first_context = model.field_context(runner.state["goal"], p["actions"][0], "1", p, [])
+    second_context = model.field_context(runner.state["goal"], second, "3", p, [])
+    assert first_context["field"]["index"] == "1"
+    assert second_context["field"]["index"] == "3"
+    assert first_context["field"]["context"] == "Passenger 1\nSearch"
+    assert second_context["field"]["context"] == "Passenger 2\nSearch"
+    helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
+    monkeypatch.setattr(loop, "field_text", helper)
+    runner.state["browser"].act.side_effect = [StalePage("Changed before input"), None]
+    with pytest.raises(StalePage):
+        runner.command("act", {"fingerprint": p["fingerprint"]})
+    runner.state["decision"] = {**decision("e4"), "target": "3"}
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+    assert helper.call_count == 2
+    assert helper.call_args.args[0] == second_context
+
+
+def test_helper_context_keeps_node_identity_when_index_is_reused():
+    p = page()
+    before = model.field_context("Find a book", p["actions"][0], "1", p, [])
+    p["actions"][0]["node"] = p["actions"][1]["node"] = 30
+    after = model.field_context("Find a book", p["actions"][0], "1", p, [])
+    assert before["field"]["index"] == after["field"]["index"]
+    assert before["field"]["node"] != after["field"]["node"]
 
 
 def test_loading_waits_do_not_trigger_no_progress_stop(runner):
