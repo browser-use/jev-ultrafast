@@ -7,8 +7,12 @@
   };
   for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
   const safe = e => !['password','file','hidden'].includes(e.type);
+  // Menus often use a transparent checkbox laid over an icon; it is the real hit target.
+  const toggleOnTop = e => e.matches('input[type=checkbox],input[type=radio]') &&
+    e.checkVisibility({checkVisibilityCSS:true}) && (r => r.width>0 && r.height>0 &&
+      document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e)(e.getBoundingClientRect());
   const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
-    e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+    (e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) || toggleOnTop(e));
   const name = (e,seen=new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
