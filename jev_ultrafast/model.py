@@ -12,6 +12,16 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 CLIENT = httpx.Client(http2=True, timeout=25)
 
 
+class MissingFieldError(Exception):
+    """The text helper's protocol-compliant answer that a required field value
+    is missing from the goal (`{"text": null}`).
+
+    Deliberately not a ValueError: field_text funnels malformed responses
+    through `except (ValueError, KeyError, TypeError)`, and a missing value
+    must stay distinguishable from a malformed one for the caller.
+    """
+
+
 def post_json(url, key, body):
     for attempt in range(3):
         try:
@@ -186,6 +196,11 @@ def field_text(context):
     )
     try:
         output = json.loads(result["choices"][0]["message"]["content"])
+        if output == {"text": None}:
+            # Protocol-compliant "the goal has no value for this field"
+            # (TEXT_VALUE). Not a malformed response: callers need to tell
+            # the two apart, so this must not fall into the ValueError below.
+            raise MissingFieldError("Required field value is missing from the goal; nothing typed.")
         value = output["text"]
         if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
             raise ValueError()

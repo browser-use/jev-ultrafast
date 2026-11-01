@@ -303,12 +303,24 @@ def test_flight_verification_rejects_wrong_trip(changed):
 
 
 @pytest.mark.parametrize(
-    "content", ["Thinking: Zurich", '{"text":null}', '{"text":"Zurich","extra":true}', '{"text":123}']
+    "content", ["Thinking: Zurich", '{"text":"Zurich","extra":true}', '{"text":123}']
 )
 def test_text_helper_rejects_invalid_values(monkeypatch, content):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     monkeypatch.setattr(model, "post_json", Mock(return_value={"choices": [{"message": {"content": content}}]}))
     with pytest.raises(ValueError, match="nothing typed"):
+        model.field_text({"goal": "Find a flight"})
+
+
+def test_text_helper_null_text_raises_missing_field_not_value_error(monkeypatch):
+    # The prompt contract says {"text": null} means "the goal has no value
+    # for this field" (#203): it must not collapse into the generic
+    # malformed-payload ValueError, so callers can tell the two apart.
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setattr(
+        model, "post_json", Mock(return_value={"choices": [{"message": {"content": '{"text":null}'}}]})
+    )
+    with pytest.raises(model.MissingFieldError, match="missing from the goal"):
         model.field_text({"goal": "Find a flight"})
 
 
@@ -318,3 +330,48 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def demo_post(monkeypatch, command):
+    # Drive Handler.do_POST without a socket: stub the transport pieces and
+    # swap in a fake command so we can see how exceptions map to status codes.
+    import io
+
+    from jev_ultrafast import demo
+
+    monkeypatch.setattr(demo, "command", command)
+    handler = demo.Handler.__new__(demo.Handler)
+    handler.path = "/api/step"
+    handler.headers = {
+        "Host": f"127.0.0.1:{demo.PORT}",
+        "X-Demo-Token": demo.TOKEN,
+        "Content-Length": "2",
+    }
+    handler.rfile = io.BytesIO(b"{}")
+    sent = []
+    handler.send = lambda status, content, mime="application/json": sent.append((status, content))
+    handler.do_POST()
+    return sent
+
+
+def test_demo_missing_field_error_maps_to_400_with_message(monkeypatch):
+    # cubic-dev-ai review on #207: a protocol-compliant {"text": null} used to
+    # surface as a 400 with the explanatory message; the MissingFieldError
+    # must ride the same branch instead of falling through to an opaque 500.
+    def command(name, body):
+        raise model.MissingFieldError("Required field value is missing from the goal; nothing typed.")
+
+    sent = demo_post(monkeypatch, command)
+    assert sent == [
+        (400, json.dumps({"error": "Required field value is missing from the goal; nothing typed."}))
+    ]
+
+
+def test_demo_unexpected_error_still_maps_to_opaque_500(monkeypatch):
+    def command(name, body):
+        raise KeyError("boom")
+
+    sent = demo_post(monkeypatch, command)
+    status, content = sent[0]
+    assert status == 500
+    assert json.loads(content)["error"].startswith("Local demo failed")
