@@ -153,7 +153,7 @@ class Agent:
             repeated = state["history"][-3:]
             state["status"] = (
                 "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
+                if len(repeated) == 3 and all(h["page_changed"] is not True and h["kind"] != "wait" for h in repeated)
                 else "ready"
             )
         else:
