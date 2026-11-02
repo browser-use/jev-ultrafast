@@ -15,6 +15,7 @@ args = parser.parse_args()
 source = args.source.resolve()
 state = json.loads((source / "state.json").read_text())
 assert state["verification"]["passed"] and not state["recording_errors"]
+assert all(h.get("execution") != "unknown" for h in state["history"]), "Cannot render unconfirmed execution timing"
 frames = [(0, Image.open(source / "frames/000000.jpg").convert("RGB"))]
 frames += sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / "screencast").glob("*.jpg"))
 end = state["elapsed_ms"]

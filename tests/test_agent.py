@@ -186,6 +186,46 @@ def test_stale_decision_is_consumed_before_any_mutation(runner):
     assert runner.state["decision"] is None
 
 
+@pytest.mark.parametrize("error_type", [TimeoutError, RuntimeError, KeyboardInterrupt])
+def test_interrupted_browser_action_stops_the_run_without_replaying(runner, monkeypatch, error_type):
+    runner.state["decision"] = decision("e3")
+    choose = Mock(return_value=decision("e3"))
+    monkeypatch.setattr(loop, "choose", choose)
+    effects = []
+
+    def act(*_args, **_kwargs):
+        effects.append("submitted")
+        raise error_type("The reply was lost after input")
+
+    runner.state["browser"].act.side_effect = act
+    with pytest.raises(error_type, match="reply was lost"):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    assert runner.snapshot()["status"] == "blocked"
+    assert runner.snapshot()["history"][-1]["execution"] == "unknown"
+    assert runner.snapshot()["history"][-1]["page_changed"] is None
+    assert runner.snapshot()["history"][-1]["executed_ms"] is None
+    assert list(runner.run()) == []
+    # Even navigation during the next freshness read must not reopen a stopped run.
+    runner.state["browser"].fresh.side_effect = StalePage("Document navigating")
+    with pytest.raises(ValueError, match="stopped"):
+        runner.command("tick")
+    runner.state["browser"].fresh.assert_not_called()
+    choose.assert_not_called()
+    assert effects == ["submitted"]
+    runner.state["browser"].observe.assert_not_called()
+
+
+def test_interrupted_fill_discards_generated_text(runner, monkeypatch):
+    monkeypatch.setattr(loop, "field_text", Mock(return_value=("book", {"model": "test", "latency_ms": 10})))
+    runner.state["browser"].act.side_effect = TimeoutError("Input reply lost")
+    with pytest.raises(TimeoutError):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.pending_text is None
+    assert runner.state["history"][-1]["text"] == "book"
+    assert runner.state["status"] == "blocked"
+
+
 def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypatch):
     helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
     monkeypatch.setattr(loop, "field_text", helper)

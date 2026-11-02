@@ -125,6 +125,14 @@ The same policy opened the requested Wikipedia article in **2.798 s** and passed
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
+If browser execution is interrupted, the action may already have taken effect even
+though its reply was lost. The agent stops that run, records `execution: "unknown"`
+with no confirmed execution timestamp, and propagates the original exception.
+Inspect the actual page before starting a new run; rerunning `run()` or `tick`
+cannot replay the interrupted action. Pre-input stale-page rejections remain
+retryable, and failures while observing an already-confirmed action retain its
+execution record.
+
 ## Development
 
 ```bash
@@ -132,10 +140,15 @@ uv run ruff check .
 uv run pytest
 node --check jev_ultrafast/static/app.js
 node --check jev_ultrafast/snapshot.js
+node --test tests/test_interrupted_ui.cjs
 uv build
 ```
 
 Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+
+`uv run python scripts/check_interrupted_actions.py` checks lost acknowledgements
+after real clicks, text input, and dropdown selection on a local fixture, without
+model calls. Each case checks the actual DOM event count before and after a retry.
 
 ---
 
