@@ -125,6 +125,11 @@ The same policy opened the requested Wikipedia article in **2.798 s** and passed
 
 A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
 
+## Further reading
+
+- [How to use Jev in 2026](https://blog.arihantdeva.com/blog/how-to-use-jev-in-2026) — the decision-model pattern behind this repo: typed judgments instead of prose, where fast models beat frontier ones, and what to verify.
+- [Jev decoded: fast decision models for the agent stack](https://blog.arihantdeva.com/blog/jev-decoded-fast-decision-models-agent-stack) — speed/cost claims, JevBench limits, and what builders can run locally.
+
 ## Development
 
 ```bash
