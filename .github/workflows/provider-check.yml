@@ -1,0 +1,55 @@
+name: Provider check
+
+# Diagnostic: pings each configured model provider with a tiny real request and
+# comments the per-role results on the PR. Keys come from repository secrets
+# (NVIDIA_API_KEY / GROQ_API_KEY); the check is skipped when no key is set.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/workflows/provider-check.yml"
+      - "scripts/check_providers.py"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . "httpx[http2]" browser-harness==0.1.13
+      - name: Check the configured providers
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PLANNER_PROVIDER: nvidia
+          PLANNER_MODEL: z-ai/glm-5.3
+          POLICY_PROVIDER: groq
+          POLICY_MODEL: openai/gpt-oss-20b
+          POLICY_REASONING: low
+          TEXT_MODEL_PROVIDER: nvidia
+          TEXT_MODEL: z-ai/glm-5.3-flash
+          TEXT_MODEL_REASONING: none
+        run: |
+          if [ -z "$NVIDIA_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
+            echo "No provider secrets configured (NVIDIA_API_KEY / GROQ_API_KEY)."
+            echo "Add them under Settings -> Secrets and variables -> Actions to enable this check."
+            exit 0
+          fi
+          python scripts/check_providers.py | tee /tmp/report.md
+      - name: Comment on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f /tmp/report.md ]; then
+            gh pr comment 1 --body-file /tmp/report.md || true
+          fi

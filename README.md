@@ -67,6 +67,88 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+## Bring your own model
+
+The policy and the text helper are pluggable. If `TYPESAFE_API_KEY` is set, Jev makes the choices. Without it, any OpenAI-compatible or Anthropic-compatible endpoint takes over — OpenRouter, NVIDIA NIM, OmniRoute, OpenAI, Anthropic, DeepSeek, Groq, Together, Mistral, xAI, Gemini, or your own gateway:
+
+```bash
+# .env — policy via OpenRouter, text helper via Anthropic
+POLICY_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-v1-...
+POLICY_MODEL=anthropic/claude-sonnet-4.5
+
+TEXT_MODEL_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+TEXT_MODEL=claude-sonnet-4-5
+```
+
+Each preset knows its base URL, dialect, and key variable, so `POLICY_PROVIDER=nvidia` plus `NVIDIA_API_KEY` is enough for NIM (`POLICY_BASE_URL` overrides any default, e.g. a remote OmniRoute gateway). The generic policy sends the same indexed element table and rules in one request and validates the returned operation/target against the observed action space, so a wrong or invented choice never executes. Full configuration, including self-hosted gateways and reasoning controls: [providers.md](docs/providers.md).
+
+An optional **planner** role adds a second, slower model that decomposes the mission into a step checklist once, while the fast policy executes one step per turn — two providers at once:
+
+```bash
+# .env — executor + text helper on Groq, planner on NVIDIA NIM
+POLICY_PROVIDER=groq
+GROQ_API_KEY=gsk-...
+POLICY_MODEL=openai/gpt-oss-20b
+
+TEXT_MODEL_PROVIDER=groq
+TEXT_MODEL=openai/gpt-oss-20b
+
+PLANNER_PROVIDER=nvidia
+NVIDIA_API_KEY=nvapi-...
+PLANNER_MODEL=z-ai/glm-5.3
+```
+
+## Run it fully local (free, offline, potato PCs)
+
+Any local OpenAI-compatible runtime works with **no API key**: Ollama (`POLICY_PROVIDER=ollama`), LM Studio (`lmstudio`), llama.cpp's server (`llamacpp`), or Jan — the model pickers in the sidebar list whatever the running server exposes. Recommended small models for the executor role (September 2026): **Qwen3.5 4B** (~4.5 GB, Apache 2.0, structured output) or **Phi-4-mini** (~2.5 GB, MIT) on CPU; Qwen3.5 9B / 8B class with a GPU or 16 GB+ RAM. A popular hybrid keeps the planner on a free cloud API while the executor and text writer run locally. Full hardware tiers, runtime comparison, setup walkthrough, and speed expectations: **[docs/modelos-locales.md](docs/modelos-locales.md)** (Español).
+
+**The open Jev alternative — [Laya](https://github.com/NandhaKishorM/laya)** (Convai Innovations, Apache 2.0, Sept 2026): an open System-1 decision engine — 32.8 ms calibrated decisions, fully local. The agent uses it, when installed (`pip install -e ".[laya]"`), to route missions and pick skills in **any language**, falling back to keywords on low confidence; it is not yet the browser executor itself (zero-shot choice accuracy and 512-token context are the honest blockers — evaluation and the fine-tuning path in [docs/modelos-locales.md §2](docs/modelos-locales.md)).
+
+```bash
+# .env — executor + text on a local Ollama, planner on a free API
+POLICY_PROVIDER=ollama
+POLICY_MODEL=qwen3.5:4b
+
+TEXT_MODEL_PROVIDER=ollama
+TEXT_MODEL=qwen3.5:4b
+```
+
+## Run it inside Firefox
+
+`extension/` is a WebExtension that turns this agent into a Firefox sidebar driving your live tab — the same planner/executor loop, the same indexed action space, no Chrome required:
+
+```bash
+uv run --env-file .env jev-firefox        # start the local bridge host
+# Firefox → about:debugging → Load Temporary Add-on → extension/manifest.json
+```
+
+**No terminal?** Double-click `start-host.bat` (Windows), `start-host.command` (macOS), or `start-host.sh` (Linux) — the first run prepares everything and opens the `.env` settings file for your keys. Full point-and-click walkthrough, including how to publish your own copy on GitHub from the web UI: [getting-started-gui.md](docs/getting-started-gui.md). **¿Español? Manual paso a paso súper sencillo: [EMPEZAR-AQUI.md](EMPEZAR-AQUI.md).**
+
+The sidebar shows the plan checklist with ✓ progress, live screenshots, every executed action, and a Stop button. Setup and architecture: [firefox-extension.md](docs/firefox-extension.md).
+
+## Beyond the browser: catalogue, tools, and approvals
+
+The sidebar has grown three more capabilities:
+
+**⚙️ Models & parameters (no `.env` editing).** Open the *Models & parameters* panel: it fetches the live model list from every provider you have a key for (24 h cached registry, `Refresh catalogue` to force it), renders one picker per role — planner, executor, text writer — plus presets (*Fast / Balanced / Deep / Browser / Coding*) and per-role *advanced* controls for reasoning effort and temperature. Selections persist in `artifacts/model-config.json` and override `.env` on the next start (`JEV_MODEL_CONFIG` moves that file). A picker switch re-runs **Test setup** automatically, so a broken model id shows up as 🔴 immediately.
+
+**🛠 Tools & skills.** Missions that need more than the tab don't go through the fast browser loop — they run through an orchestrator (your planner model) with nine tools:
+
+| Tool | What it does |
+|---|---|
+| `web_search` / `read_page` | DuckDuckGo search and readable page text |
+| `download_file` | saves a file into the per-task workspace (25 MB cap) |
+| `write_file` / `read_file` / `list_files` | text files inside the sandboxed workspace |
+| `parse_document` | extracts text from PDF / DOCX / XLSX (`pip install -e ".[documents]"` — the starters do it for you) |
+| `run_command` | shell command in the workspace under a permission policy |
+| `browser_task` | hands a browser step back to the fast JEV loop on your live tab |
+
+Keyword-matched **skills** (`skills/` directories with a manifest + instructions) add procedural guidance for browser missions, web research, documents, and coding. Try: *"Download the Wikipedia page on Barcelona as a file, then write a summary"* or *"Create a python script that prints hello and run it"*.
+
+**🔐 Command approvals.** The terminal policy is: read-only commands (`ls`, `git status`, …) run; destructive ones (`sudo`, `rm -rf`, `curl | sh`, …) are blocked; everything else — including any redirect or compound command — asks first. The sidebar shows the exact command with **Approve / Deny**; no answer in 2 minutes means denied. Files can never leave the task workspace (`workspace/`), and every tool result is size-capped.
+
 ## Use the library
 
 ```python

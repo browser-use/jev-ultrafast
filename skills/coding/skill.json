@@ -1,0 +1,12 @@
+{
+  "id": "coding",
+  "name": "Coding and terminal",
+  "description": "Create projects, run commands, and work with Git",
+  "keywords": [
+    "project", "script", "code", "npm", "node", "python", "pip", "package.json",
+    "install", "run tests", "build", "git", "repository", "commit",
+    "proyecto", "código", "programa", "instala", "ejecuta"
+  ],
+  "tools": ["run_command", "write_file", "read_file", "list_files"],
+  "instructions": "instructions.md"
+}

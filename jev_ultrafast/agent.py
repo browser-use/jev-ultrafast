@@ -5,34 +5,44 @@ import time
 from pathlib import Path
 
 from .browser import Browser, StalePage
-from .model import action_space, choose, field_context, field_text
-from .questions import MAX_STEPS
+from .model import action_space, choose, field_context, field_text, plan_steps, planning_config, replan_steps
+from .questions import MAX_REPLANS, MAX_STEPS
 
 
 class Agent:
-    def __init__(self, url, goals, *, record_dir=None, screenshots=False):
+    def __init__(self, url, goals, *, record_dir=None, screenshots=False, browser=None):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
         plan = [task]
+        self.planner = planning_config()
         self.pending_text = None
-        self.browser = Browser(url)
+        self.browser = browser if browser is not None else Browser(url)
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
         try:
             page = self.browser.observe(screenshot=self.screenshots)
+            if self.planner:
+                try:
+                    steps = plan_steps(task, page)
+                    if steps:
+                        plan = steps
+                except (RuntimeError, ValueError):
+                    pass  # a failing planner falls back to the original single-goal loop
         except Exception:
             self.browser.close()
             raise
         self.state = dict(
             browser=self.browser,
-            goal="\n".join(plan),
+            goal=task,
             page=page,
             decision=None,
             history=[],
             status="ready",
             plan=plan,
             plan_index=0,
+            replans=0,
+            planner=self.planner["model"] if self.planner else None,
             decisions=[],
             text_calls=[],
             elapsed_ms=0,
@@ -48,6 +58,44 @@ class Agent:
             **{k: v for k, v in self.state.items() if k != "browser"},
             "elements": action_space(self.state["page"]["actions"])[0],
         }
+
+    def directive(self):
+        """The full mission for single-goal runs; mission plus current-step focus for planned runs."""
+        state = self.state
+        plan = state.get("plan") or []
+        if len(plan) <= 1:
+            return state["goal"]
+        index = min(state.get("plan_index", 0), len(plan) - 1)
+        lines = ["{} {}. {}".format("✓" if k < index else "·", k + 1, step) for k, step in enumerate(plan)]
+        return (
+            f"{state['goal']}\n\n"
+            "EXECUTION PLAN (✓ steps are already complete; do not repeat them):\n"
+            + "\n".join(lines)
+            + f"\n\nCURRENT STEP {index + 1}/{len(plan)}: {plan[index]}\n"
+            "Advance the current step only."
+        )
+
+    def _replan(self, reason):
+        """Replace the remaining steps via the planner; bounded so a broken planner cannot loop."""
+        state = self.state
+        if not getattr(self, "planner", None) or state.get("replans", 0) >= MAX_REPLANS:
+            return False
+        try:
+            steps = replan_steps(
+                state["goal"],
+                state.get("plan") or [],
+                state.get("plan_index", 0),
+                reason,
+                state["page"],
+                state["history"],
+            )
+        except (RuntimeError, ValueError):
+            return False
+        if not steps:
+            return False
+        state["plan"] = (state.get("plan") or [])[: state.get("plan_index", 0)] + steps
+        state["replans"] = state.get("replans", 0) + 1
+        return True
 
     def command(self, name, body=None):
         body = body or {}
@@ -74,7 +122,7 @@ class Agent:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
-            state["decision"] = choose(state["page"], state["goal"], state["history"])
+            state["decision"] = choose(state["page"], self.directive(), state["history"])
             state["decisions"].append(
                 {
                     **state["decision"],
@@ -94,8 +142,20 @@ class Agent:
                 if not state["browser"].fresh(page):
                     state["status"] = "ready"
                     raise StalePage("Page changed since the decision. Choose again.")
+                plan = state.get("plan") or [state["goal"]]
+                if selected == "DONE" and len(plan) > 1 and state["plan_index"] < len(plan) - 1:
+                    # A finished step continues to the next one; only the last DONE ends the run.
+                    state["plan_index"] += 1
+                    state["status"] = "ready"
+                    state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                    return self.snapshot()
+                blocked_reason = "The executor reported that no supported operation can progress."
+                if selected == "BLOCKED" and self._replan(blocked_reason):
+                    state["status"] = "ready"
+                    state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                    return self.snapshot()
                 state["status"] = "done" if selected == "DONE" else "blocked"
-                state["plan_index"] = int(selected == "DONE")
+                state["plan_index"] = len(plan) if selected == "DONE" else state.get("plan_index", 0)
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
             action = next(a for a in page["actions"] if a["id"] == selected)
@@ -106,7 +166,7 @@ class Agent:
             if action["kind"] == "fill":
                 if not state["browser"].fresh(page):
                     raise StalePage("Page changed before text generation. Choose again.")
-                context = field_context(state["goal"], action, page, state["history"])
+                context = field_context(self.directive(), action, page, state["history"])
                 if self.pending_text and self.pending_text[0] == context:
                     _, text, helper = self.pending_text
                 else:
@@ -151,11 +211,11 @@ class Agent:
                     base64.b64decode(state["page"]["screenshot"])
                 )
             repeated = state["history"][-3:]
-            state["status"] = (
-                "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
-                else "ready"
-            )
+            stalled = len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
+            if stalled and self._replan("Three consecutive actions changed nothing on the page."):
+                state["status"] = "ready"
+            else:
+                state["status"] = "blocked" if stalled else "ready"
         else:
             raise ValueError("Unknown command")
         return self.snapshot()

@@ -68,7 +68,10 @@ async function perform(fn, label) {
 }
 function render() {
   if (!state) return;
-  $("helper").textContent = `Text helper · ${state.text_model}`;
+  $("helper").textContent = [state.planner && `Planner · ${state.planner}`, `Text helper · ${state.text_model}`]
+    .filter(Boolean)
+    .join(" · ");
+  $("policy-tag").innerHTML = `${escape(state.policy_model || "jev-latest")} <span>+ text helper</span>`;
   $("plan").innerHTML = (state.plan || [])
     .map(
       (goal, i) =>
@@ -104,7 +107,11 @@ function render() {
   $("latency").textContent = d ? `${d.latency_ms} ms` : "—";
   $("confidence").textContent = d?.target_confidence != null ? percent(d.target_confidence) : "—";
   $("completion").textContent = d ? d.operation : "—";
-  $("ranking-note").textContent = d ? "Ranked by Jev" : "Unranked";
+  $("ranking-note").textContent = !d
+    ? "Unranked"
+    : d.provider === "llm"
+      ? "Chosen by your model"
+      : "Ranked by Jev";
   const op = Object.entries(d?.operation_probabilities || {}).sort((a,b)=>b[1]-a[1]);
   $("operation-choices").innerHTML = op.map(([name,p]) =>
     `<span class="operation-choice ${name === d.operation ? 'best' : ''}">${escape(name)} <b>${percent(p)}</b></span>`).join('');

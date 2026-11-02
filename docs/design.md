@@ -4,6 +4,8 @@ The input is a natural-language goal. Every page observation builds an indexed t
 
 One TypeSafe request asks which operation to perform and which target would be appropriate for each available operation. The executor consumes only the target head corresponding to the selected operation. This avoids serial operation-then-target calls and rejects targets incompatible with the operation. Dropdown targets include a code-owned option index.
 
+The policy backend is pluggable. Without a TypeSafe key, any OpenAI-compatible or Anthropic-compatible endpoint (OpenRouter, NVIDIA NIM, OmniRoute, OpenAI, Anthropic, DeepSeek, Groq, Together, Mistral, xAI, Gemini, or a custom gateway) receives the same element table, rules, and history in one chat request and must return one JSON object with the operation and target. The reply is validated against the observed action space exactly like a TypeSafe answer; an invented operation or target never executes. See [providers.md](providers.md).
+
 Operation and target questions receive the same next-step rules. Target criteria include current values and checked/selected state. The questions run independently: a target cannot read the operation answer, so its premise explicitly names the operation it assumes.
 
 TYPE_TEXT sends the goal, selected field, visible page context, and recent actions to a small LLM. Its JSON must contain exactly one valid `text` value. The code does not extract quoted literals. A value can be reused after a stale decision only while the entire helper input is identical, and is discarded after a successful mutation.

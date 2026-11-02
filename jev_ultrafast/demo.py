@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .agent import Agent
+from .model import policy_description
 from .questions import MAX_STEPS
 
 ROOT = Path(__file__).parent
@@ -23,15 +24,24 @@ AGENT = None
 def load_environment():
     path = Path.cwd() / ".env"
     if path.exists():
-        for line in path.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key, value)
+        with open(path, encoding="utf-8-sig") as handle:
+            for line in handle:
+                if "=" in line and not line.startswith("#"):
+                    key, value = line.split("=", 1)
+                    value = value.strip()
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                        value = value[1:-1]
+                    os.environ.setdefault(key.strip(), value)
 
 
 def response_state():
     state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
+    return {
+        **state,
+        "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"),
+        "policy_model": policy_description(),
+        "max_steps": MAX_STEPS,
+    }
 
 
 def close_browser():
@@ -133,6 +143,7 @@ def main():
     atexit.register(close_browser)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Jev Ultrafast: {ORIGIN}", flush=True)
+    print(f"Policy model: {policy_description()}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

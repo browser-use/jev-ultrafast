@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "Jev Ultrafast · Firefox Agent",
+  "version": "0.2.0",
+  "description": "Sidebar agent: plan with a deep model, execute fast, drive your own Firefox tab.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jev-ultrafast@custom-web-ultrafast",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "Open the Jev sidebar"
+  },
+  "sidebar_action": {
+    "default_title": "Jev Agent",
+    "default_panel": "sidebar/sidebar.html",
+    "open_at_install": false
+  }
+}

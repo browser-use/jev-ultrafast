@@ -1,0 +1,12 @@
+{
+  "id": "browser",
+  "name": "Browser automation",
+  "description": "Delegate multi-step interactions on the user's live Firefox tab",
+  "keywords": [
+    "website", "web page", "page", "click", "fill", "form", "login form",
+    "flight", "hotel", "book", "cart", "checkout", "navega", "pagina", "web",
+    "open the site", "on the page"
+  ],
+  "tools": ["browser_task"],
+  "instructions": "instructions.md"
+}

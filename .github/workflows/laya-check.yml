@@ -1,0 +1,48 @@
+name: Laya check
+
+# Diagnostic: loads the REAL open Laya weights (Apache 2.0, from Hugging Face)
+# and replays multilingual mission-routing and skill-picking cases, commenting
+# the results on the PR. The agent's keyword fallback covers any miss, so this
+# check measures quality — it never gates the build on the numbers.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/workflows/laya-check.yml"
+      - "scripts/check_laya.py"
+      - "jev_ultrafast/laya_local.py"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache the Laya weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: laya-weights-multilingual-v1
+      - name: Install (CPU torch first, so the runner stays light)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet -e ".[laya]" "httpx[http2]" browser-harness==0.1.13
+      - name: Run the multilingual battery
+        env:
+          LAYA_CHECKPOINT: multilingual
+        run: python scripts/check_laya.py | tee /tmp/report.md
+      - name: Comment on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f /tmp/report.md ]; then
+            gh pr comment 1 --body-file /tmp/report.md || true
+          fi

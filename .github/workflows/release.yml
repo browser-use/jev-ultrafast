@@ -1,0 +1,92 @@
+name: Release artifacts
+
+# Builds the downloadable artifacts (source ZIP, Firefox .xpi, Python wheel)
+# and attaches them to the GitHub release for the pushed tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip build
+          pip install -e . pytest ruff "httpx[http2]" browser-harness==0.1.13
+      - name: Checks
+        run: |
+          ruff check .
+          pytest -q
+          node --check jev_ultrafast/static/app.js
+          node --check extension/background.js
+          node --check extension/content.js
+          node --check extension/sidebar/sidebar.js
+      - name: Build artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python -m build --wheel --outdir dist
+          (cd extension && zip -r -q "../jev-agent-firefox-${GITHUB_REF_NAME}.xpi" .)
+          git archive --format=zip -o "custom-web-ultrafast-${GITHUB_REF_NAME}-source.zip" HEAD
+          ls -la dist *.xpi *-source.zip
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          LOG=/tmp/upload.log
+          : > "$LOG"
+          report() {
+            gh pr comment 1 --body "Release upload failed for ${GITHUB_REF_NAME}:\n\`\`\`\n$(tail -40 "$LOG")\n\`\`\`" >/dev/null 2>&1 || true
+          }
+          fail() {
+            echo "FAILED: $1" | tee -a "$LOG"
+            report
+            exit 1
+          }
+          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${GITHUB_REF_NAME}\") | .id" 2>>"$LOG") \
+            || fail "could not list releases"
+          [ -n "${RELEASE_ID:-}" ] || fail "no release found for tag ${GITHUB_REF_NAME}"
+          echo "release id: $RELEASE_ID" | tee -a "$LOG"
+          upload() {
+            local file="$1" name attempt asset_id
+            name="$(basename "$file")"
+            asset_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
+              --jq ".[] | select(.name == \"${name}\") | .id" 2>>"$LOG" || true)
+            if [ -n "${asset_id:-}" ]; then
+              echo "replacing existing asset ${name} (id ${asset_id})" | tee -a "$LOG"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/${asset_id}" >>"$LOG" 2>&1 || true
+              sleep 2
+            fi
+            for attempt in 1 2 3; do
+              echo "uploading ${name} (attempt ${attempt})" | tee -a "$LOG"
+              if curl -sSf -X POST \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$file" \
+                "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=${name}" >>"$LOG" 2>&1; then
+                echo "uploaded ${name}" | tee -a "$LOG"
+                return 0
+              fi
+              sleep 5
+            done
+            fail "could not upload ${name}"
+          }
+          upload "dist/jev_ultrafast-${VERSION}-py3-none-any.whl" || exit 1
+          upload "jev-agent-firefox-${GITHUB_REF_NAME}.xpi" || exit 1
+          upload "custom-web-ultrafast-${GITHUB_REF_NAME}-source.zip" || exit 1
+          echo "ALL ASSETS UPLOADED" | tee -a "$LOG"

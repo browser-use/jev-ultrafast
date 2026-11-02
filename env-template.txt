@@ -1,0 +1,46 @@
+# ============================================================
+#  JEV AGENT - SETTINGS / CONFIGURACION
+#
+#  1) Paste your API key below - ONE key is enough to start.
+#       Groq (free):   https://console.groq.com/keys
+#       NVIDIA (free): https://build.nvidia.com
+#  2) Save this file (Ctrl+S on Windows/Linux, Cmd+S on macOS) and close it.
+#  3) Double-click the starter again.
+# ============================================================
+
+GROQ_API_KEY=PASTE-YOUR-GROQ-KEY-HERE
+NVIDIA_API_KEY=PASTE-YOUR-NVIDIA-KEY-HERE
+
+# ---- Everything below is preconfigured - no changes needed ----
+
+# Fast executor: picks each action. Needs the Groq key.
+POLICY_PROVIDER=groq
+POLICY_MODEL=openai/gpt-oss-20b
+POLICY_REASONING=low
+
+# Planner: breaks your mission into a checklist. Needs the NVIDIA key. Optional.
+PLANNER_PROVIDER=nvidia
+PLANNER_MODEL=z-ai/glm-5.3
+
+# Text writer: fills text fields. Uses Groq too - measured ~300 ms per field
+# vs ~22 s for glm-5.3-flash (which reasons by default). Needs the Groq key.
+TEXT_MODEL_PROVIDER=groq
+TEXT_MODEL=openai/gpt-oss-20b
+TEXT_MODEL_REASONING=low
+
+# ---- Model panel (sidebar) - no changes needed ----
+# The "Models & parameters" panel in the sidebar saves your picks to
+# artifacts/model-config.json (they win over this file on the next start).
+# Optional file locations / fine-tuning:
+# JEV_MODEL_CONFIG=artifacts/model-config.json
+# JEV_MODEL_REGISTRY=artifacts/model-registry.json
+# PLANNER_TEMPERATURE=0.5
+
+# ---- 100% free / offline option (no API key) ----
+# Any local OpenAI-compatible runtime: ollama, lmstudio, llamacpp, jan.
+# Example with Ollama (https://ollama.com):  ollama pull qwen3.5:4b
+# POLICY_PROVIDER=ollama
+# POLICY_MODEL=qwen3.5:4b
+# TEXT_MODEL_PROVIDER=ollama
+# TEXT_MODEL=qwen3.5:4b
+# Hardware guide (Spanish): docs/modelos-locales.md

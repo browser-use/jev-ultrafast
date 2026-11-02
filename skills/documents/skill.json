@@ -1,0 +1,12 @@
+{
+  "id": "documents",
+  "name": "Documents",
+  "description": "Download and parse PDF, DOCX, and XLSX files",
+  "keywords": [
+    "pdf", "docx", "xlsx", "excel", "word document", "spreadsheet",
+    "document", "report", "table", "extract the", "parse the",
+    "archivo", "hoja de cálculo", "documento"
+  ],
+  "tools": ["download_file", "parse_document", "read_file", "write_file", "list_files"],
+  "instructions": "instructions.md"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "web-research",
+  "name": "Web research",
+  "description": "Search the web, read pages, and cite sources",
+  "keywords": [
+    "search", "find information", "research", "documentation", "docs",
+    "look up", "what is", "who is", "latest", "news", "compare",
+    "busca", "busca información", "investiga", "documentación", "noticias"
+  ],
+  "tools": ["web_search", "read_page", "download_file"],
+  "instructions": "instructions.md"
+}
