@@ -67,6 +67,22 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+### Serving Jev through OpenRouter
+
+The decision endpoint is configurable, so the same policy can run on an OpenRouter key instead of a TypeSafe one. OpenRouter exposes Jev on its decisions endpoint, not on `chat/completions`:
+
+```dotenv
+TYPESAFE_API_KEY=<your OpenRouter key>
+TYPESAFE_ENDPOINT=https://openrouter.ai/api/alpha/decisions
+TYPESAFE_MODEL=~typesafe/jev-latest
+```
+
+The request and response shape matches `https://api.typesafe.ai/v1/systemone`, so no policy code changes. Two properties to keep in mind: `~typesafe/jev-latest` is an organization-scoped model that does not appear in `/api/v1/models`, and `/api/alpha/` is an alpha endpoint. Leave `TYPESAFE_ENDPOINT` unset to use TypeSafe's own API.
+
+### Editor and agent plugins
+
+`plugins/jev-ultrafast/` packages a setup skill, a `/jev` run command, and dedicated-Chrome launcher scripts for Claude Code and ZCode. Add this repository as a plugin marketplace to install it.
+
 ## Use the library
 
 ```python
