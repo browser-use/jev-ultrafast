@@ -115,8 +115,11 @@ def choose(state, goal, history):
         },
         "questions": questions,
     }
+    key = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    if not key:
+        raise ValueError("Set TYPESAFE_API_KEY; no action executed.")
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    result = post_json("https://api.typesafe.ai/v1/systemone", key, body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None

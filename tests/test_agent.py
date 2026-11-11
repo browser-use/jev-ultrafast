@@ -157,6 +157,19 @@ def test_missing_text_credential_stops_before_guessing(monkeypatch):
         model.field_text({"goal": 'Enter "Zurich"'})
 
 
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_missing_typesafe_key_stops_before_a_request(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("TYPESAFE_API_KEY", value)
+    post = Mock()
+    monkeypatch.setattr(model, "post_json", post)
+    with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
+        model.choose(page(), "Find a book", [])
+    post.assert_not_called()
+
+
 @pytest.fixture
 def runner():
     a = loop.Agent.__new__(loop.Agent)
