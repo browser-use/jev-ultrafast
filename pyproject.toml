@@ -7,15 +7,20 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = ["browser-harness==0.1.13", "httpx[http2]>=0.28,<1"]
 
+[project.optional-dependencies]
+# Goal-level MCP server. The core agent stays at two dependencies.
+mcp = ["mcp==2.1.1"]
+
 [project.scripts]
 jev = "jev_ultrafast.demo:main"
+jev-mcp = "jev_ultrafast.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest>=8.4,<9", "ruff>=0.14,<1", "pillow>=11,<13"]
+dev = ["pytest>=8.4,<9", "ruff>=0.14,<1", "pillow>=11,<13", "mcp==2.1.1"]
 
 [tool.ruff]
 line-length = 120

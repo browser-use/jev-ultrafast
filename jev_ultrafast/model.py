@@ -1,5 +1,6 @@
 """TypeSafe makes choices; an optional small OpenAI-compatible model writes field values."""
 
+import atexit
 import json
 import math
 import os
@@ -9,7 +10,10 @@ import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
+# One pooled client per process. A long-lived server reuses connections; every
+# process still releases its sockets on exit instead of leaving them to the collector.
 CLIENT = httpx.Client(http2=True, timeout=25)
+atexit.register(CLIENT.close)
 
 
 def post_json(url, key, body):
