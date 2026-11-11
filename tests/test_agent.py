@@ -318,3 +318,30 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_browser_opens_its_own_window_and_falls_back_when_unsupported(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    def run(fail_new_window):
+        calls = []
+
+        def cdp(method, **params):
+            calls.append((method, params))
+            if method == "Target.createTarget":
+                if fail_new_window and params.get("newWindow"):
+                    raise RuntimeError("not supported by headless shell")
+                return {"targetId": "t"}
+            return {"sessionId": "s"} if method == "Target.attachToTarget" else {}
+
+        monkeypatch.setattr(browser, "ensure_daemon", lambda: None)
+        monkeypatch.setattr(browser, "cdp", cdp)
+        monkeypatch.setattr(browser.Browser, "evaluate", lambda self, expression: "complete")
+        browser.Browser("about:blank")
+        return [p for m, p in calls if m == "Target.createTarget"]
+
+    assert run(False) == [{"url": "about:blank", "newWindow": True, "background": True}]
+    assert run(True) == [
+        {"url": "about:blank", "newWindow": True, "background": True},
+        {"url": "about:blank", "background": True},
+    ]
