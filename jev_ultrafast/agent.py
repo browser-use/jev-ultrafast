@@ -85,8 +85,10 @@ class Agent:
             state["status"] = "predicted"
         elif name == "act":
             decision, page = state["decision"], state["page"]
-            if not decision or body.get("fingerprint") != page["fingerprint"]:
+            if not decision:
                 raise ValueError("Observe and choose before acting")
+            if body.get("fingerprint") != page["fingerprint"]:
+                raise StalePage("Page changed since the decision. Choose again.")
             # Consume once, before any mutation or model call. A retry cannot double-click.
             state["decision"] = None
             selected = decision["choice"]

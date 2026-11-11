@@ -25,7 +25,11 @@ async function call(name, body = {}) {
     body: JSON.stringify(body),
   });
   const data = await response.json();
-  if (!response.ok) throw Error(data.error || "Request failed");
+  if (!response.ok) {
+    const error = Error(data.error || "Request failed");
+    error.status = response.status;
+    throw error;
+  }
   state = data;
   render();
   return data;
@@ -170,15 +174,27 @@ $("auto").addEventListener("click", () =>
   perform(async () => {
     automatic = true;
     controls();
+    let failures = 0;
     for (let i = 0; i < state.max_steps * 2 && automatic; i++) {
       $("status").textContent = "Running…";
-      if ($("pace").checked) {
-        await call("predict");
-        await new Promise(resolve => setTimeout(resolve, 450));
-        if (!automatic) break;
-        await call("act", {fingerprint: state.page.fingerprint});
-      } else {
-        await call("tick");
+      try {
+        if ($("pace").checked) {
+          await call("predict");
+          await new Promise(resolve => setTimeout(resolve, 450));
+          if (!automatic) break;
+          try {
+            await call("act", {fingerprint: state.page.fingerprint});
+          } catch (error) {
+            if (error.status !== 409) throw error;
+            continue; // Page moved during the pause; the next iteration decides fresh.
+          }
+        } else {
+          await call("tick");
+        }
+        failures = 0;
+      } catch (error) {
+        if (++failures >= 3) throw error;
+        await new Promise(resolve => setTimeout(resolve, 800));
       }
       if (["done", "blocked"].includes(state.status)) break;
     }
