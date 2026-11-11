@@ -3,24 +3,47 @@
 import argparse
 import base64
 import json
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from jev_ultrafast import Agent
 
 URL = "https://www.google.com/travel/flights?hl=en"
+# The page only offers today and later, so a frozen date turns this example into a guaranteed miss.
+DAY = date.today() + timedelta(days=21)
+# The page is ?hl=en, so label matching must not follow this machine's locale.
+MONTHS = "January February March April May June July August September October November December".split()
+WEEKDAYS = "Monday Tuesday Wednesday Thursday Friday Saturday Sunday".split()
+
+
+def goal_date(day):
+    """How the task says the date: 'October 18, 2026'."""
+    return f"{MONTHS[day.month - 1]} {day.day}, {day.year}"
+
+
+def field_date(day):
+    """How the Departure input shows it: 'Sun, Oct 18'."""
+    return f"{WEEKDAYS[day.weekday()][:3]}, {MONTHS[day.month - 1][:3]} {day.day}"
+
+
+def flight_date(day):
+    """How each result label says it: 'Sunday, October 18'."""
+    return f"{WEEKDAYS[day.weekday()]}, {MONTHS[day.month - 1]} {day.day}"
+
+
 GOALS = (
-    "Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. "
+    f"Find one-way flights from Zurich to London on {goal_date(DAY)}, for one adult in economy. "
     "Stop when matching flight options are visible. Do not select or book a flight."
 )
 
 
-def verify(page):
+def verify(page, day=DAY):
     """Independent checks on the resulting page, not the model's DONE answer."""
     parsed = urlparse(page["url"])
     encoded = parse_qs(parsed.query).get("tfs", [""])[0]
     try:
-        date_in_url = b"2026-09-20" in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        date_in_url = day.isoformat().encode() in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
     except ValueError:
         date_in_url = False
     actions = page["actions"]
@@ -31,9 +54,9 @@ def verify(page):
         "one_way": values.get("Change ticket type. One way") == "One way",
         "origin": values.get("Where from?") == "Zürich",
         "destination": values.get("Where to?") == "London",
-        "date": values.get("Departure") == "Sun, Sep 20",
-        "year": date_in_url or "departing 2026-09-20" in page["text"],
-        "results": bool(flights) and all("Sunday, September 20" in f for f in flights),
+        "date": values.get("Departure") == field_date(day),
+        "year": date_in_url or f"departing {day.isoformat()}" in page["text"],
+        "results": bool(flights) and all(flight_date(day) in f for f in flights),
     }
     return {"passed": all(checks.values()), "checks": checks, "visible_flights": flights}
 
