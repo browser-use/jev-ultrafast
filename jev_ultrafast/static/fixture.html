@@ -419,7 +419,7 @@
             (!free || p.free),
         );
         document.getElementById("count").textContent =
-          `${rows.length} places${searched ? " in " + query : ""}`;
+          `${rows.length} place${rows.length === 1 ? "" : "s"}${searched ? " in " + query : ""}`;
         const target = document.getElementById("results");
         target.innerHTML = rows.length
           ? rows

@@ -96,7 +96,7 @@ function render() {
   $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
-  $("action-count").textContent = `${state.elements.length} elements`;
+  $("action-count").textContent = `${state.elements.length} element${state.elements.length === 1 ? "" : "s"}`;
   const chosen = page.actions.find((a) => a.id === d?.choice);
   $("choice-title").textContent = d
     ? chosen?.label || d.choice
@@ -132,7 +132,7 @@ function render() {
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
-  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
+  $("step-count").textContent = `${state.history.length} action${state.history.length === 1 ? "" : "s"} · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
   $("model-state").textContent = JSON.stringify(
     d?.request || {
       goal: state.goal,
