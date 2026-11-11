@@ -28,8 +28,12 @@ class Browser:
         self.call("Page.navigate", url=url)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
-            if self.evaluate("document.readyState") == "complete":
-                break
+            try:
+                if self.evaluate("document.readyState") == "complete":
+                    break
+            except StalePage:
+                # Page.navigate destroys the about:blank context. Keep polling.
+                pass
             time.sleep(0.02)
 
     def call(self, method, **params):
