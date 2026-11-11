@@ -13,17 +13,31 @@ CLIENT = httpx.Client(http2=True, timeout=25)
 
 
 def post_json(url, key, body):
+    # Single home for transient transport/provider retries: connection errors,
+    # HTTP 429/529/503 and 5xx, and OpenRouter's HTTP-200-with-error-body shape
+    # after an upstream timeout. Content-level failures stay with the callers,
+    # which are the only judges of a valid response body.
     for attempt in range(3):
         try:
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
         except httpx.HTTPError:
-            raise RuntimeError("Model connection failed; no action executed.") from None
-        if response.status_code in {429, 529, 503} and attempt < 2:
-            time.sleep(0.5 * 2**attempt)
-            continue
-        if response.is_error:
-            raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
-        return response.json()
+            failure = RuntimeError("Model connection failed; no action executed.")
+        else:
+            data = {} if response.is_error else response.json()
+            if isinstance(data, dict) and data.get("error"):
+                detail = data["error"]
+                detail = detail.get("message", detail) if isinstance(detail, dict) else detail
+                failure = RuntimeError(f"Model provider returned an error: {detail}")
+            elif response.is_error and response.status_code not in {429, 529, 503} and response.status_code < 500:
+                # A permanent client-side rejection (auth, bad model name): retrying cannot help.
+                raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
+            elif response.is_error:
+                failure = RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
+            else:
+                return data
+        if attempt == 2:
+            raise failure
+        time.sleep(0.5 * 2**attempt)
     raise RuntimeError("Model unavailable")
 
 
@@ -167,32 +181,48 @@ def field_text(context):
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
     started = time.perf_counter()
-    result = post_json(
-        base + "/chat/completions",
-        key,
-        {
-            "model": model,
-            "max_tokens": 1024,
-            "response_format": {"type": "json_object"},
-            **reasoning,
-            "messages": [
-                {"role": "system", "content": TEXT_VALUE},
-                {
-                    "role": "user",
-                    "content": json.dumps(context),
-                },
-            ],
-        },
-    )
-    try:
-        output = json.loads(result["choices"][0]["message"]["content"])
-        value = output["text"]
-        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
-    return value, {
+    request = {
         "model": model,
-        "latency_ms": round((time.perf_counter() - started) * 1000),
-        "usage": result.get("usage", {}),
+        "max_tokens": 1024,
+        "response_format": {"type": "json_object"},
+        **reasoning,
+        "messages": [
+            {"role": "system", "content": TEXT_VALUE},
+            {
+                "role": "user",
+                "content": json.dumps(context),
+            },
+        ],
     }
+    for attempt in range(3):
+        # post_json owns transient transport/provider retries; this loop only
+        # re-samples content-level flakes (markdown fences, schema misses).
+        result = post_json(base + "/chat/completions", key, request)
+        try:
+            content = result["choices"][0]["message"]["content"]
+            trimmed = content.strip()
+            if trimmed.startswith("```"):
+                # The text model sometimes wraps the JSON object in a markdown fence,
+                # at the start, at the end, or both.
+                trimmed = trimmed.strip("`").strip()
+                if trimmed[:4].lower() == "json":
+                    trimmed = trimmed[4:].lstrip()
+            if trimmed.endswith("```"):
+                trimmed = trimmed.rstrip("`").rstrip()
+            output = json.loads(trimmed)
+            value = output["text"]
+            if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
+                raise ValueError()
+            return value, {
+                "model": model,
+                "latency_ms": round((time.perf_counter() - started) * 1000),
+                "usage": result.get("usage", {}),
+            }
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            failure = ValueError(
+                f"Text helper returned no valid field value; nothing typed. Response: {repr(result)[:300]}"
+            )
+            if attempt == 2:
+                raise failure from None
+        if attempt < 2:
+            time.sleep(0.5 * 2**attempt)
