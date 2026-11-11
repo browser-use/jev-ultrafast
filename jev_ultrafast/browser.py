@@ -86,7 +86,7 @@ class Browser:
         raise StalePage("Page did not settle")
 
     def fresh(self, page, action=None):
-        if action is not None and action["kind"] in {"click", "select"}:
+        if action is not None and "node" in action:
             node = action["node"]
             if type(node) is not int:
                 return False
