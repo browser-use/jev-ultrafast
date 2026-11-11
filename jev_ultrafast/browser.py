@@ -117,6 +117,55 @@ def fingerprint(state):
     return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
+# Where to click an observed node, or null when it is gone, disabled, hidden or covered.
+TARGET_JS = """(action => {
+  const seen=el=>el.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  // A point inside el that el itself receives. A link that wraps has its box's centre between or beside its lines,
+  // so each line's centre is tried after the box's.
+  const centre=el=>{
+    const box=el.getBoundingClientRect();
+    if (!box.width || !box.height) return null;
+    for (const r of [box, ...el.getClientRects()]) {
+      const x=r.x+r.width/2, y=r.y+r.height/2;
+      if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+      if (el.contains(document.elementFromPoint(x,y))) return {x,y};
+    }
+    return null;
+  };
+  const e=window.__jevFast?.nodes.get(action.node);
+  if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]')) return null;
+  if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
+  let at=seen(e) ? centre(e) : null;
+  if (!at && action.kind==='click' && e.matches('input[type=radio],input[type=checkbox]')) {
+    // A styled choice hides its input inside its label: a person clicks the label, which toggles the input.
+    // The first label that is visible, not inert, not covered, and has no other control at its centre (that control
+    // would take the click instead: the same controls snapshot.js observes).
+    const controls='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
+      ['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio','option','gridcell','combobox',
+       'textbox','searchbox','spinbutton'].map(role=>'[role="'+role+'"]').join(',');
+    for (const label of e.labels||[]) {
+      if (!seen(label) || label.closest('[inert]')) continue;
+      const point=centre(label);
+      if (!point) continue;
+      const inner=document.elementFromPoint(point.x,point.y).closest(controls);
+      if (inner && inner!==e && label.contains(inner)) continue;
+      at=point;
+      break;
+    }
+  }
+  if (!at) return null;
+  const {x,y}=at;
+  if (action.kind==='select') {
+    if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
+        !o.disabled && !o.closest('optgroup[disabled]'))) return null;
+    e.value=action.value;
+    e.dispatchEvent(new Event('input',{bubbles:true}));
+    e.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  return {x,y};
+})"""
+
+
 def browser_operation(request):
     operation = request["operation"]
     session = request["session"]
@@ -141,23 +190,7 @@ def browser_operation(request):
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
-            target = evaluate("""(action => {
-              const e=window.__jevFast?.nodes.get(action.node);
-              if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
-                  !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
-              if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
-              if (action.kind==='select') {
-                if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
-                    !o.disabled && !o.closest('optgroup[disabled]'))) return null;
-                e.value=action.value;
-                e.dispatchEvent(new Event('input',{bubbles:true}));
-                e.dispatchEvent(new Event('change',{bubbles:true}));
-              }
-              return {x,y};
-            })(""" + json.dumps(action) + ")")
+            target = evaluate(TARGET_JS + "(" + json.dumps(action) + ")")
             if target is None:
                 if kind == "select":
                     raise RuntimeError("Dropdown execution was not confirmed; inspect before retrying.")
