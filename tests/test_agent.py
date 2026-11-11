@@ -302,6 +302,65 @@ def test_flight_verification_rejects_wrong_trip(changed):
     assert not verify(actual)["passed"]
 
 
+MDN_PATH = [
+    "https://developer.mozilla.org/en-US/docs/Web/HTML",
+    "https://developer.mozilla.org/en-US/docs/Web/CSS",
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+]
+
+
+def test_mdn_verification_accepts_the_ordered_topics():
+    from examples.mdn import verify
+
+    visited = [
+        "https://developer.mozilla.org/en-US/docs/Web",
+        *MDN_PATH,
+        "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide",
+    ]
+    assert verify({"url": MDN_PATH[-1]}, visited)["passed"]
+
+
+def test_mdn_verification_accepts_query_and_fragment_on_the_topic():
+    from examples.mdn import verify
+
+    visited = ["https://developer.mozilla.org/en-US/docs/Web", *MDN_PATH[:2]]
+    assert verify({"url": MDN_PATH[-1] + "#syntax"}, [*visited, MDN_PATH[-1]])["passed"]
+
+
+def test_mdn_verification_rejects_out_of_order_topics_with_all_topics_visited():
+    from examples.mdn import verify
+
+    # Every topic is present; only the order is wrong (JavaScript before CSS).
+    visited = ["https://developer.mozilla.org/en-US/docs/Web", MDN_PATH[0], MDN_PATH[2], MDN_PATH[1]]
+    checks = verify({"url": MDN_PATH[1]}, visited)["checks"]
+    assert checks["each_topic_was_visited"] is True
+    assert checks["topics_were_visited_in_order"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing_topic", "wrong_order", "wrong_final", "descendant_page", "skipped_ahead"],
+)
+def test_mdn_verification_rejects_wrong_waypoints(mutation):
+    from examples.mdn import verify
+
+    visited = ["https://developer.mozilla.org/en-US/docs/Web", *MDN_PATH]
+    url = MDN_PATH[-1]
+    if mutation == "missing_topic":
+        visited = visited[:2]  # CSS and JavaScript were never reached.
+    elif mutation == "wrong_order":
+        visited = [visited[0], visited[3], visited[1], visited[2]]  # JavaScript before CSS.
+    elif mutation == "wrong_final":
+        url = MDN_PATH[1]  # The run stopped on CSS instead of JavaScript.
+    elif mutation == "descendant_page":
+        # A descendant page is not the topic page the goal asks to open.
+        visited = ["https://developer.mozilla.org/en-US/docs/Web/HTML/Element", MDN_PATH[-1]]
+    else:
+        # The run jumped straight to the final topic, skipping HTML and CSS.
+        visited = ["https://developer.mozilla.org/en-US/docs/Web", MDN_PATH[-1]]
+    assert not verify({"url": url}, visited)["passed"]
+
+
 @pytest.mark.parametrize(
     "content", ["Thinking: Zurich", '{"text":null}', '{"text":"Zurich","extra":true}', '{"text":123}']
 )
