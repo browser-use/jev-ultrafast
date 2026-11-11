@@ -157,6 +157,31 @@ def test_missing_text_credential_stops_before_guessing(monkeypatch):
         model.field_text({"goal": 'Enter "Zurich"'})
 
 
+def test_reasoning_payload_is_provider_aware(monkeypatch):
+    """A DeepSeek base URL keeps its native disabled shape when reasoning is off."""
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.delenv("TEXT_MODEL_REASONING", raising=False)
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1")
+    model.field_text({"goal": "g"})
+    body = post.call_args.args[2]
+    assert body["thinking"] == {"type": "disabled"}
+    assert "reasoning" not in body
+
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
+    model.field_text({"goal": "g"})
+    body = post.call_args.args[2]
+    assert body["reasoning"] == {"enabled": False}
+    assert "thinking" not in body
+
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "low")
+    model.field_text({"goal": "g"})
+    body = post.call_args.args[2]
+    assert body["reasoning"] == {"effort": "low"}
+
+
 @pytest.fixture
 def runner():
     a = loop.Agent.__new__(loop.Agent)
@@ -318,3 +343,20 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_agent_warns_when_text_model_key_missing(monkeypatch):
+    monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
+    monkeypatch.setattr(loop, "Browser", Mock())
+    with pytest.warns(UserWarning, match="TEXT_MODEL_API_KEY"):
+        loop.Agent("https://example.test", "Find a flight")
+
+
+def test_agent_no_warning_when_text_model_key_set(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test-key")
+    monkeypatch.setattr(loop, "Browser", Mock())
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loop.Agent("https://example.test", "Find a flight")
