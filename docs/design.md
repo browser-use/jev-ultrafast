@@ -6,7 +6,7 @@ One TypeSafe request asks which operation to perform and which target would be a
 
 Operation and target questions receive the same next-step rules. Target criteria include current values and checked/selected state. The questions run independently: a target cannot read the operation answer, so its premise explicitly names the operation it assumes.
 
-TYPE_TEXT sends the goal, selected field, visible page context, and recent actions to a small LLM. Its JSON must contain exactly one valid `text` value. The code does not extract quoted literals. A value can be reused after a stale decision only while the entire helper input is identical, and is discarded after a successful mutation.
+TYPE_TEXT sends the goal, selected field, visible page context, and recent actions to a small LLM. Its JSON must contain exactly one valid `text` value. The code does not extract quoted literals. A value can be reused after a stale decision only while the entire helper input is identical, and is discarded after a successful mutation. A native date or time field also names the value form it takes, such as `YYYY-MM-DD`; those fields drop inserted text, so the value is set as their picker sets it, and a value the field rejects changes nothing.
 
 ## Runtime
 
