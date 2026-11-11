@@ -140,6 +140,30 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
     assert d["choice"] == "e3"
 
 
+def test_toggle_button_pressed_state_reaches_the_model(monkeypatch):
+    p = page()
+    p["actions"].insert(0, {
+        "id": "toggle", "kind": "click", "label": "Nonstop only", "node": 30, "role": "button", "pressed": "true",
+    })
+    sent = []
+
+    def post(_url, _key, body):
+        sent.append(body)
+        return {
+            "model": "test",
+            "answers": {
+                "operation": choice(body["questions"]["operation"]["criteria"], "CLICK"),
+                "click_target": choice(body["questions"]["click_target"]["criteria"], "1"),
+            },
+        }
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    model.choose(p, "Show nonstop flights", [])
+    assert sent[0]["state"]["elements"][0]["pressed"] == "true"
+    assert sent[0]["questions"]["click_target"]["criteria"]["1"]["pressed"] == "true"
+
+
 def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})

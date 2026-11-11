@@ -50,7 +50,7 @@
     return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
-      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
+      e.getAttribute('aria-pressed'),e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
   const actions=[];
   for (const e of document.querySelectorAll(selector)) {
@@ -60,7 +60,7 @@
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
-    for (const key of ['checked','selected','expanded']) {
+    for (const key of ['checked','selected','expanded','pressed']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;
     }
