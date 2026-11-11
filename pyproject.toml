@@ -5,7 +5,7 @@ description = "A browser agent that chooses instead of generating."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["browser-harness==0.1.13", "httpx[http2]>=0.28,<1"]
+dependencies = ["browser-harness==0.1.13", "httpx[http2]>=0.28,<1", "socksio>=1.0"]
 
 [project.scripts]
 jev = "jev_ultrafast.demo:main"
