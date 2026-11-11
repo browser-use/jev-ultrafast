@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .agent import Agent
+from .model import MissingFieldError
 from .questions import MAX_STEPS
 
 ROOT = Path(__file__).parent
@@ -117,7 +118,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             result = command(self.path.removeprefix("/api/"), body)
             self.send(200, json.dumps(result))
-        except (ValueError, RuntimeError, TimeoutError) as error:
+        except (MissingFieldError, ValueError, RuntimeError, TimeoutError) as error:
+            # MissingFieldError rides the 400 branch so the local demo still
+            # reports the explanatory message instead of an opaque 500: the
+            # field helper's "the goal has no value for this field" answer is a
+            # client-meaningful outcome, not an internal failure.
             self.send(400, json.dumps({"error": str(error)}))
         except Exception:
             self.send(500, json.dumps({"error": "Local demo failed; no automatic retry. Reset to recover."}))
