@@ -54,6 +54,14 @@
   };
   const actions=[];
   for (const e of document.querySelectorAll(selector)) {
+    if (e.type==='file') {
+      // Files are set on the node, never clicked, so geometry is unused. Upload widgets often
+      // visually hide the input; its visible parent stands in for it.
+      if (!e.disabled && !e.closest('[aria-disabled="true"]') && (visible(e) || visible(e.parentElement)))
+        actions.push({node:identity(e),role:'file',kind:'upload',label:name(e)||e.name||'File upload',
+          accept:e.accept,multiple:e.multiple,value:[...e.files].map(f=>f.name).join(', ')});
+      continue;
+    }
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
