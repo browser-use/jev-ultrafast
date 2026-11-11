@@ -20,10 +20,14 @@ class StalePage(ValueError):
 class Browser:
     def __init__(self, url):
         ensure_daemon()
-        self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
+        # Chrome throttles a background tab to ~2 rAF/s even with focus emulation, so menus
+        # animating in (opacity/transform transitions) stay invisible to the observer.
+        # Give the owned tab its own window instead of activating it: the active tab of any
+        # visible window renders at full rate, while the user's window keeps its visible tab
+        # both during the run and after close() removes the tab (and with it the window).
+        self.target = cdp("Target.createTarget", url="about:blank", newWindow=True, background=True)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
         self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
-        # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
         self.call("Page.navigate", url=url)
         deadline = time.monotonic() + 15

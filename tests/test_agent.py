@@ -276,21 +276,22 @@ def test_fingerprint_tracks_values_and_identity_not_screenshots():
     assert fingerprint(p) != fingerprint(other)
 
 
-@pytest.mark.parametrize("changed", ["Departure", "Where from?", "Where to?", "year"])
+@pytest.mark.parametrize("changed", ["Departure", "Return", "Where from?", "Where to?", "year"])
 def test_flight_verification_rejects_wrong_trip(changed):
     from examples.flights import verify
 
     actual = {
         "url": "https://www.google.com/travel/flights/search?tfs=example",
-        "text": "Track prices from Zürich to London departing 2026-09-20",
+        "text": "Track prices from Johor Bahru to Kota Kinabalu departing 2026-10-16 returning 2026-10-21",
         "actions": [
             {"label": k, "value": v}
             for k, v in [
-                ("Change ticket type. One way", "One way"),
-                ("Where from?", "Zürich"),
-                ("Where to?", "London"),
-                ("Departure", "Sun, Sep 20"),
-                ("Nonstop flight on Sunday, September 20. Select flight", ""),
+                ("Change ticket type. Round trip", "Round trip"),
+                ("Where from? Johor Bahru JHB", "Johor Bahru"),
+                ("Where to? Kota Kinabalu BKI", "Kota Kinabalu"),
+                ("Departure", "Fri, Oct 16"),
+                ("Return", "Wed, Oct 21"),
+                ("Nonstop flight with AirAsia. Leaves Johor Bahru at 7:00 AM on Friday, October 16. Select flight", ""),
             ]
         ],
     }
@@ -298,7 +299,7 @@ def test_flight_verification_rejects_wrong_trip(changed):
     if changed == "year":
         actual["text"] = actual["text"].replace("2026", "2027")
     else:
-        next(a for a in actual["actions"] if a["label"] == changed)["value"] = "wrong"
+        next(a for a in actual["actions"] if a["label"].startswith(changed))["value"] = "wrong"
     assert not verify(actual)["passed"]
 
 
