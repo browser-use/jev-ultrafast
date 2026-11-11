@@ -155,14 +155,37 @@ def browser_operation(request):
                 e.value=action.value;
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
+              } else if (action.kind==='fill' && e.tagName==='INPUT' &&
+                  ['date','time','datetime-local','month','week'].includes(e.type)) {
+                // Native pickers ignore IME text commits (Input.insertText), so the
+                // advertised TYPE_TEXT can only work by assigning the value directly.
+                if (typeof action.text!=='string') return null;
+                const prev = e.value;
+                e.value = action.text;
+                if (!e.value && action.text) {
+                  e.value = prev;
+                  return null; // rejected invalid format
+                }
+                e.dispatchEvent(new Event('input',{bubbles:true}));
+                e.dispatchEvent(new Event('change',{bubbles:true}));
+                return {x,y,native:true};
+              } else if (action.kind==='fill' && e.tagName==='INPUT' && e.type==='range') {
+                // Sliders are set by value; clicking the track centre cannot target one.
+                if (typeof action.text!=='string') return null;
+                const v=Number(action.text);
+                if (!Number.isFinite(v)) return null;
+                e.value=v; // the control clamps to its own [min,max]
+                e.dispatchEvent(new Event('input',{bubbles:true}));
+                e.dispatchEvent(new Event('change',{bubbles:true}));
+                return {x,y,native:true};
               }
               return {x,y};
-            })(""" + json.dumps(action) + ")")
+            })(""" + json.dumps({**action, "text": request.get("text")}) + ")")
             if target is None:
                 if kind == "select":
                     raise RuntimeError("Dropdown execution was not confirmed; inspect before retrying.")
                 raise StalePage("Target changed or is covered. Observe again.")
-            if kind != "select":
+            if kind != "select" and not target.get("native"):
                 x, y = target["x"], target["y"]
                 for event in ("mousePressed", "mouseReleased"):
                     call("Input.dispatchMouseEvent", type=event, x=x, y=y, button="left", clickCount=1)
