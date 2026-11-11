@@ -1,3 +1,13 @@
+const pageEffect = (changed) =>
+  changed === true
+    ? "Page changed"
+    : changed === false
+      ? "No change observed"
+      : "Outcome not observed";
+
+if (typeof module !== "undefined") module.exports = { pageEffect };
+
+if (typeof document !== "undefined") {
 const $ = (id) => document.getElementById(id);
 const token = document.querySelector('meta[name="demo-token"]').content;
 let state = null,
@@ -128,7 +138,7 @@ function render() {
     ? state.history
         .map(
           (h) =>
-            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
+            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${pageEffect(h.page_changed)}</span></div>`,
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
@@ -242,3 +252,4 @@ fetch("/api/state")
   .catch(() => {
     $("status").textContent = "Cannot reach local demo server";
   });
+}
