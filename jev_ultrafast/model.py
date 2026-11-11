@@ -18,12 +18,28 @@ def post_json(url, key, body):
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
         except httpx.HTTPError:
             raise RuntimeError("Model connection failed; no action executed.") from None
-        if response.status_code in {429, 529, 503} and attempt < 2:
+        if response.status_code in {429, 503, 504, 529} and attempt < 2:
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
-        return response.json()
+        try:
+            data = response.json()
+        except ValueError:
+            # 2xx with a non-JSON or empty body (HTML gateway/CDN error page):
+            # a transient provider failure, not a usable response.
+            if attempt < 2:
+                time.sleep(0.5 * 2**attempt)
+                continue
+            raise RuntimeError("Model provider returned an invalid response body; no action executed.")
+        error = data.get("error") if isinstance(data, dict) else None
+        if error:
+            message = error.get("message", error) if isinstance(error, dict) else error
+            if attempt < 2 and isinstance(error, dict) and error.get("code") in {429, 503, 504, 529}:
+                time.sleep(0.5 * 2**attempt)
+                continue
+            raise RuntimeError(f"Model provider returned an error: {message}")
+        return data
     raise RuntimeError("Model unavailable")
 
 

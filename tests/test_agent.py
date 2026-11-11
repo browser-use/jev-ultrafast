@@ -5,6 +5,7 @@ import time
 from copy import deepcopy
 from unittest.mock import Mock
 
+import httpx
 import pytest
 
 from jev_ultrafast import agent as loop
@@ -318,3 +319,69 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_post_json_raises_on_200_with_error_body(monkeypatch):
+    response = httpx.Response(
+        200,
+        json={
+            "id": "gen-1790531184",
+            "error": {"message": "Model overloaded", "code": 500},
+        },
+    )
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: response)
+    with pytest.raises(RuntimeError, match="Model overloaded"):
+        model.post_json("https://provider.test/v1/chat/completions", "key", {})
+
+
+def test_post_json_retries_transient_error_body(monkeypatch):
+    transient = httpx.Response(200, json={"error": {"message": "Upstream idle timeout exceeded", "code": 504}})
+    ok = httpx.Response(200, json={"choices": []})
+    responses = [transient, ok]
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    assert model.post_json("https://provider.test/v1/chat/completions", "key", {}) == {"choices": []}
+    assert not responses
+
+
+def test_post_json_raises_on_string_error_body(monkeypatch):
+    response = httpx.Response(200, json={"error": "rate_limited"})
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: response)
+    with pytest.raises(RuntimeError, match="rate_limited"):
+        model.post_json("https://provider.test/v1/chat/completions", "key", {})
+
+
+def test_post_json_returns_success_body_unchanged(monkeypatch):
+    response = httpx.Response(200, json={"choices": []})
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: response)
+    assert model.post_json("https://provider.test/v1/chat/completions", "key", {}) == {"choices": []}
+
+
+def test_post_json_recovers_after_non_json_200_body(monkeypatch):
+    html = httpx.Response(200, content=b"<html>Bad Gateway</html>")
+    ok = httpx.Response(200, json={"choices": []})
+    responses = [html, ok]
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    assert model.post_json("https://provider.test/v1/chat/completions", "key", {}) == {"choices": []}
+    assert not responses
+
+
+def test_post_json_raises_on_persistent_non_json_200_body(monkeypatch):
+    response = httpx.Response(200, content=b"")
+    calls = []
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: calls.append(1) or response)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError, match="invalid response body"):
+        model.post_json("https://provider.test/v1/chat/completions", "key", {})
+    assert len(calls) == 3
+
+
+def test_post_json_retries_http_504(monkeypatch):
+    gateway = httpx.Response(504)
+    ok = httpx.Response(200, json={"choices": []})
+    responses = [gateway, ok]
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    assert model.post_json("https://provider.test/v1/chat/completions", "key", {}) == {"choices": []}
+    assert not responses
