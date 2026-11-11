@@ -11,20 +11,34 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
 CLIENT = httpx.Client(http2=True, timeout=25)
 
+# Bẫy đo được trên máy này: client http2 dùng lại bị ReadTimeout với omniproxy
+# localhost sau ~2 lần gọi. Mỗi request dùng client mới, http2 tắt, timeout dài.
+# claude-sonnet-5 qua omniproxy có thể mất 30-90s khi generate JSON với reasoning.
+def _post_once(url, key, body):
+    with httpx.Client(http2=False, timeout=120) as client:
+        return client.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+
 
 def post_json(url, key, body):
+    last = None
     for attempt in range(3):
         try:
-            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
-        except httpx.HTTPError:
-            raise RuntimeError("Model connection failed; no action executed.") from None
+            response = _post_once(url, key, body)
+        except httpx.HTTPError as exc:
+            last = exc
+            if attempt < 2:
+                time.sleep(0.5 * 2**attempt)
+                continue
+            raise RuntimeError(
+                f"Model connection failed ({type(exc).__name__}); no action executed."
+            ) from None
         if response.status_code in {429, 529, 503} and attempt < 2:
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
         return response.json()
-    raise RuntimeError("Model unavailable")
+    raise RuntimeError(f"Model unavailable ({type(last).__name__ if last else 'retries exhausted'})")
 
 
 def validate_choice(answer, ids):
