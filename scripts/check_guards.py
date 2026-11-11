@@ -3,6 +3,7 @@
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
+from jev_ultrafast.model import action_space
 
 HTML = """<!doctype html><title>Guard checks</title>
 <style>body{margin:30px}button{width:180px;height:50px}#outside{position:absolute;top:3000px}</style>
@@ -127,6 +128,28 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <button type="button" onclick="document.querySelector('output').textContent='Inbox'">Move → Inbox</button>
+          <button type="button" onclick="document.querySelector('output').textContent='Archive'">Move → Archive</button>
+          <label>Origin → Destination<input value="Current"></label>
+          <select aria-label="Delivery → Method"><option>Current</option>
+            <option value="archive">Inbox → Archive</option><option value="trash">Inbox → Trash</option></select>
+          <output></output>
+        """))
+        page = browser.observe(screenshot=False)
+        elements, targets, _ = action_space(page["actions"])
+        assert [e["label"] for e in elements] == [
+            "Move → Inbox", "Move → Archive", "Origin → Destination", "Delivery → Method",
+        ]
+        assert elements[-1]["options"][0]["label"] == "Delivery → Method → Inbox → Archive"
+        browser.act(targets["SELECT"]["4:1"], page)
+        assert browser.evaluate("document.querySelector('select').value") == "archive"
+        page = browser.observe(screenshot=False)
+        _, targets, _ = action_space(page["actions"])
+        browser.act(targets["CLICK"]["2"], page)
+        assert browser.evaluate("document.querySelector('output').textContent") == "Archive"
+        passed.append("literal arrows survive element names without changing select or click targets")
     finally:
         browser.close()
     print("\n".join(passed))
