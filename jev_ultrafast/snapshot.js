@@ -9,11 +9,12 @@
   const safe = e => !['password','file','hidden'].includes(e.type);
   const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-  const name = (e,seen=new Set()) => {
-    if (!e || seen.has(e)) return '';
+  // `self` names an element listed in its own aria-labelledby, e.g. <button id=d aria-labelledby="d file">.
+  const name = (e,seen=new Set(),self=false) => {
+    if (!e || seen.has(e) && !self) return '';
     seen.add(e);
-    const referenced=(e.getAttribute('aria-labelledby')||'').split(/\s+/)
-      .map(id=>name(document.getElementById(id),seen)).filter(Boolean).join(' ');
+    const referenced=self ? '' : (e.getAttribute('aria-labelledby')||'').split(/\s+/)
+      .map(id=>document.getElementById(id)).map(r=>name(r,seen,r===e)).filter(Boolean).join(' ');
     return referenced || e.getAttribute('aria-label') ||
       [...(e.labels||[])].map(l=>name(l,seen)).filter(Boolean).join(' ') ||
       (['button','submit','reset'].includes(e.type) ? e.value : '') || e.getAttribute('alt') ||
