@@ -48,7 +48,7 @@ def validate_choice(answer, ids):
 def action_space(actions):
     """One index per observed element; each operation has its own valid target choices."""
     elements, indices, targets, controls = [], {}, {}, {}
-    operations = {"click": "CLICK", "fill": "TYPE_TEXT", "select": "SELECT"}
+    operations = {"click": "CLICK", "fill": "TYPE_TEXT", "select": "SELECT", "press": "PRESS_ENTER"}
     for action in actions:
         kind = action["kind"]
         if kind not in operations:
@@ -84,6 +84,7 @@ def choose(state, goal, history):
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
         "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
         "SELECT": "Select an observed dropdown value.",
+        "PRESS_ENTER": "Press Enter in an editable field to submit it or confirm an autocomplete selection.",
     }
     operations = {key: labels[key] for key in targets}
     operations.update({key: value["label"] for key, value in controls.items()})

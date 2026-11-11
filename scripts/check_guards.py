@@ -124,6 +124,35 @@ def main():
         assert value == "Generated", repr(value)
         assert any(a.get("role") == "option" for a in page["actions"])
         passed.append("real text input waits for asynchronous combobox suggestions")
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <form onsubmit="event.preventDefault(); window.submitted=this.query.value">
+            <input name="query" aria-label="Query" value="a book">
+          </form>
+          <textarea aria-label="Message" onkeydown="if(event.key==='Enter') {
+            event.preventDefault(); window.message=this.value;
+          }">Hello</textarea>
+          <input aria-label="Read only" readonly>
+          <textarea aria-label="ARIA read only" aria-readonly="true"></textarea>
+          <input aria-label="Disabled" disabled>
+          <input aria-label="Secret" type="password">
+        """))
+        page = browser.observe(screenshot=False)
+        presses = [a for a in page["actions"] if a["kind"] == "press"]
+        assert {a["label"] for a in presses} == {"Query", "Message"}
+        query = next(a for a in presses if a["label"] == "Query")
+        browser.act(query, page)
+        assert browser.evaluate("window.submitted") == "a book"
+        passed.append("Enter submits a populated native form without a submit button")
+        page = browser.observe(screenshot=False)
+        message = next(a for a in page["actions"] if a["kind"] == "press" and a["label"] == "Message")
+        browser.act(message, page)
+        assert browser.evaluate("window.message") == "Hello"
+        passed.append("Enter sends a populated chat message without a send button")
+        page = browser.observe(screenshot=False)
+        message = next(a for a in page["actions"] if a["kind"] == "press" and a["label"] == "Message")
+        browser.evaluate("document.querySelector('textarea').readOnly=true")
+        assert not browser.fresh(page, message)
+        passed.append("read-only message invalidates Enter before input")
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
