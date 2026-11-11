@@ -1,5 +1,12 @@
 <img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
 
+> [!NOTE]
+> **Jev Ultrafast is now ultrafast mode in [Browser Use](https://github.com/browser-use/browser-use).** Same idea, built in: the agent acts on numbered page elements. Browser Use also handles long multi-step tasks.
+>
+> Python: `pip install browser-use`, then `Agent(task, mode='ultrafast')` (already the default on the `bu-fast` and `bu-ultrafast` models). Hosted: the `bu-ultrafast` model in Browser Use Cloud.
+>
+> This repo stays up as the original Browser Use × TypeSafe experiment.
+
 # Jev Ultrafast ⚡
 
 > [!IMPORTANT]
@@ -50,7 +57,7 @@ Target questions are speculative. If the operation is `CLICK`, only `click_targe
 
 There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
 
-## Try it
+## Try the original demo
 
 ```bash
 git clone https://github.com/browser-use/jev-ultrafast.git
@@ -67,7 +74,7 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
-## Use the library
+## Use the original library
 
 ```python
 from jev_ultrafast import Agent
