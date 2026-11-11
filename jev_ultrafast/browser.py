@@ -141,6 +141,9 @@ def browser_operation(request):
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
+            # `text` lives on the request, not on the action, and the native
+            # date/time path inside the evaluation needs it.
+            payload = {**action, "text": request.get("text")}
             target = evaluate("""(action => {
               const e=window.__jevFast?.nodes.get(action.node);
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
@@ -156,12 +159,39 @@ def browser_operation(request):
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
+              if (action.kind==='fill' && ['date','datetime-local','time','month','week'].includes((e.type||'').toLowerCase())) {
+                // Input.insertText does not commit into a native date/time
+                // control. Assign through the native value setter so React's
+                // value tracker sees a real change, then fire the events an
+                // edit would. An invalid value is reported distinctly rather
+                // than as a stale target the tick loop would retry forever.
+                e.focus();
+                const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+                const before=e.value;
+                setter.call(e, action.text);
+                if (!e.value) {
+                  // An invalid string clears the control. Restore what was
+                  // there and reject without firing input/change for a value
+                  // the field never accepted.
+                  setter.call(e, before);
+                  return {rejected:'not a valid '+e.type+' value'};
+                }
+                e.dispatchEvent(new Event('input',{bubbles:true}));
+                e.dispatchEvent(new Event('change',{bubbles:true}));
+                return {x,y,filled:true};
+              }
               return {x,y};
-            })(""" + json.dumps(action) + ")")
+            })(""" + json.dumps(payload) + ")")
             if target is None:
                 if kind == "select":
                     raise RuntimeError("Dropdown execution was not confirmed; inspect before retrying.")
                 raise StalePage("Target changed or is covered. Observe again.")
+            if target.get("rejected"):
+                raise RuntimeError(f"Native date/time fill rejected: {target['rejected']}")
+            if target.get("filled"):
+                # Native date/time controls were committed through JS above;
+                # the click-and-type path would not change their value.
+                return {"executed": action["id"]}
             if kind != "select":
                 x, y = target["x"], target["y"]
                 for event in ("mousePressed", "mouseReleased"):

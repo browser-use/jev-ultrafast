@@ -38,8 +38,32 @@
       if (e.type==='search') return 'searchbox';
       if (e.type==='number') return 'spinbutton';
       if (['text','email','url','tel'].includes(e.type)) return 'textbox';
+      // Native date/time controls are text-like for the policy: without a role
+      // they were dropped from the element table, so a form with a required
+      // date field could only ever be submitted with that field empty.
+      if (['date','datetime-local','time','month','week'].includes(e.type)) return 'textbox';
     }
     return null;
+  };
+  // Nearest grouping container, so identically-labelled fields (a shipping and
+  // a billing "Street Address", or repeated rows each with a "Quantity") can be
+  // told apart by the text model instead of producing identical prompts.
+  const group = e => {
+    for (let scope=e.parentElement; scope; scope=scope.parentElement) {
+      if (!scope.matches('fieldset,form,[role="group"],[role="dialog"],tr,li,[role="row"]')) continue;
+      const legend=scope.querySelector(':scope > legend');
+      const ids=(scope.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean);
+      const fromIds=ids.map(id=>document.getElementById(id)?.textContent||'').join(' ').trim();
+      const label=(legend?.textContent || fromIds || scope.getAttribute('aria-label') || '').trim();
+      if (label) return label.slice(0,120);
+      // Rows and list items rarely carry a label; their own text is what
+      // separates one repeated "Quantity" from the next.
+      if (scope.matches('tr,li,[role="row"]')) {
+        const text=(scope.innerText || '').trim().slice(0,120);
+        if (text) return text;
+      }
+    }
+    return '';
   };
   cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
     [...document.querySelectorAll('input,textarea,select')].filter(safe)
@@ -58,7 +82,7 @@
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
-    const base={node:identity(e),role:rname,label:name(e)||rname,
+    const base={node:identity(e),role:rname,label:name(e)||rname,group:group(e),
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
