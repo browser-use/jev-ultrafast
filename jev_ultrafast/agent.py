@@ -9,6 +9,19 @@ from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
 
+def stalled(history):
+    """Three consecutive non-`wait` actions that did not prove a page change.
+
+    An unobserved outcome (a failed post-action observation keeps ``page_changed``
+    at ``None``) is not proven progress, so the guard must stop a stalled run
+    instead of funding it to the model-call budget. Lives at module level so both
+    the normal post-action path and the ``tick`` recovery path can reach it:
+    a failing observation raises before the inline guard would run.
+    """
+    recent = history[-3:]
+    return len(recent) == 3 and all(h["page_changed"] is not True and h["kind"] != "wait" for h in recent)
+
+
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
@@ -61,6 +74,10 @@ class Agent:
                 state["status"] = "ready"
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                # A post-action observation that keeps failing lands here instead of the
+                # inline guard, so it never saw the accumulating unobserved outcomes.
+                if stalled(state["history"]):
+                    state["status"] = "blocked"
                 return self.snapshot()
         elif name == "predict":
             if not state["browser"]:
@@ -150,12 +167,9 @@ class Agent:
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )
-            repeated = state["history"][-3:]
-            state["status"] = (
-                "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
-                else "ready"
-            )
+            # An unobserved outcome (a failed post-action observation) is not proven progress:
+            # the guard must still stop a stalled run instead of funding it to the model-call budget.
+            state["status"] = "blocked" if stalled(state["history"]) else "ready"
         else:
             raise ValueError("Unknown command")
         return self.snapshot()
