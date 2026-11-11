@@ -10,8 +10,11 @@ Submit populated search fields before opening a result; a populated field alone 
 WAIT only when the needed control is absent/disabled, or submitted results are still loading.
 If Search/Submit is visible and the required fields are ready, CLICK it immediately.
 Recent WAIT actions are not evidence of loading. Prefer a useful visible control over WAIT.
+Scrolling is incremental. If the needed target is still absent after a successful scroll and the same
+scroll direction remains available, continue scrolling; one viewport movement does not exhaust the page.
 DONE requires visible evidence that ALL requirements are satisfied. If asked to open a result,
-a matching link is not enough. BLOCKED means no supported operation can make progress."""
+a matching link is not enough. BLOCKED means no supported operation can make progress, including
+revealing more of the page with an available scroll operation."""
 
 TARGET = """Choose the best observed target if the next operation is the one specified in this question.
 Use the user's entire goal, field values, nearby text, and recent actions. This question chooses only

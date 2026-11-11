@@ -96,6 +96,77 @@ def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
     assert set(calls[0]["questions"]) == {"operation", "click_target", "type_text_target"}
 
 
+@pytest.mark.parametrize(
+    ("choice_id", "before_y", "after_y", "operation"),
+    [
+        ("scroll_down", 0, 560, "SCROLL_DOWN"),
+        ("scroll_up", 560, 0, "SCROLL_UP"),
+    ],
+)
+def test_scroll_continuation_tracks_both_directions(choice_id, before_y, after_y, operation):
+    history = [{
+        "choice": choice_id,
+        "scroll_before": {"y": before_y},
+        "scroll_after": {"y": after_y},
+    }]
+    assert model.continuing_scroll({operation: {}}, history) == operation
+
+
+def test_successful_incremental_scroll_sends_position_and_cannot_block(monkeypatch):
+    p = page()
+    p["scroll"] = {"y": 560, "height": 1759}
+    p["actions"] = [
+        {"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560},
+        {"id": "scroll_up", "kind": "scroll", "label": "Scroll up", "delta": -560},
+    ]
+    history = [{
+        "action": "Scroll down", "kind": "scroll", "choice": "scroll_down", "page_changed": True,
+        "scroll_before": {"y": 0, "height": 1759}, "scroll_after": {"y": 560, "height": 1759},
+    }]
+
+    def post(_url, _key, body):
+        operations = body["questions"]["operation"]["criteria"]
+        assert "BLOCKED" not in operations
+        assert body["state"]["page"]["scroll"] == {
+            "y": 560, "height": 1759, "can_scroll_up": True, "can_scroll_down": True,
+        }
+        assert body["state"]["recent_actions"][-1]["scroll_before"]["y"] == 0
+        assert body["state"]["recent_actions"][-1]["scroll_after"]["y"] == 560
+        return {"model": "test", "answers": {"operation": choice(operations, "SCROLL_DOWN")}}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    assert model.choose(p, "Find a lower target", history)["choice"] == "scroll_down"
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        [],
+        [{
+            "kind": "scroll", "choice": "scroll_down", "scroll_before": {"y": 560},
+            "scroll_after": {"y": 560},
+        }],
+        [{
+            "kind": "scroll", "choice": "scroll_up", "scroll_before": {"y": 560},
+            "scroll_after": {"y": 0},
+        }],
+    ],
+)
+def test_blocked_remains_available_without_proven_scroll_progress(monkeypatch, history):
+    p = page()
+    p["actions"] = [{"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560}]
+
+    def post(_url, _key, body):
+        operations = body["questions"]["operation"]["criteria"]
+        assert "BLOCKED" in operations
+        return {"model": "test", "answers": {"operation": choice(operations, "BLOCKED")}}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    assert model.choose(p, "Find a lower target", history)["choice"] == "BLOCKED"
+
+
 def test_click_cannot_consume_a_text_target(monkeypatch):
     def post(_url, _key, body):
         return {
@@ -216,6 +287,24 @@ def test_loading_waits_do_not_trigger_no_progress_stop(runner):
         runner.state["decision"] = decision("wait")
         runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     assert len(runner.state["history"]) == 5 and runner.state["status"] == "ready"
+
+
+def test_scroll_history_records_before_and_after_positions(runner):
+    before = page()
+    before["actions"] = [{"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560}]
+    before["scroll"] = {"y": 0, "height": 1759}
+    before["fingerprint"] = fingerprint(before)
+    after = deepcopy(before)
+    after["scroll"] = {"y": 560, "height": 1759}
+    after["fingerprint"] = fingerprint(after)
+    runner.state["page"] = before
+    runner.state["decision"] = decision("scroll_down") | {"operation": "SCROLL_DOWN", "target": None}
+    runner.state["browser"].observe.return_value = after
+
+    runner.command("act", {"fingerprint": before["fingerprint"]})
+
+    assert runner.state["history"][-1]["scroll_before"] == {"y": 0, "height": 1759}
+    assert runner.state["history"][-1]["scroll_after"] == {"y": 560, "height": 1759}
 
 
 def test_stale_observation_preserves_executed_action(runner):

@@ -78,6 +78,22 @@ def action_space(actions):
     return elements, targets, controls
 
 
+def continuing_scroll(controls, history):
+    """Return a scroll operation that demonstrably advanced and can continue."""
+    if not history:
+        return None
+    last = history[-1]
+    operation = {"scroll_down": "SCROLL_DOWN", "scroll_up": "SCROLL_UP"}.get(last.get("choice"))
+    before = last.get("scroll_before", {}).get("y")
+    after = last.get("scroll_after", {}).get("y")
+    progressed = (
+        operation == "SCROLL_DOWN" and type(before) in (int, float) and type(after) in (int, float) and after > before
+    ) or (
+        operation == "SCROLL_UP" and type(before) in (int, float) and type(after) in (int, float) and after < before
+    )
+    return operation if progressed and operation in controls else None
+
+
 def choose(state, goal, history):
     elements, targets, controls = action_space(state["actions"])
     labels = {
@@ -87,7 +103,9 @@ def choose(state, goal, history):
     }
     operations = {key: labels[key] for key in targets}
     operations.update({key: value["label"] for key, value in controls.items()})
-    operations.update(DONE="Every requirement is visibly satisfied.", BLOCKED="No supported operation can progress.")
+    operations["DONE"] = "Every requirement is visibly satisfied."
+    if not continuing_scroll(controls, history):
+        operations["BLOCKED"] = "No supported operation can progress."
     questions = {
         "operation": {"type": "choice", "criteria": operations, "instructions": {"goal": goal, "rules": NEXT_ACTION}}
     }
@@ -107,10 +125,21 @@ def choose(state, goal, history):
     body = {
         "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
         "state": {
-            "page": {k: state[k] for k in ("url", "title", "text")},
+            "page": {
+                **{k: state[k] for k in ("url", "title", "text")},
+                "scroll": {
+                    **state.get("scroll", {}),
+                    "can_scroll_up": "SCROLL_UP" in controls,
+                    "can_scroll_down": "SCROLL_DOWN" in controls,
+                },
+            },
             "elements": elements,
             "recent_actions": [
-                {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
+                {
+                    k: h.get(k)
+                    for k in ("action", "kind", "text", "page_changed", "scroll_before", "scroll_after")
+                }
+                for h in history[-10:]
             ],
         },
         "questions": questions,
