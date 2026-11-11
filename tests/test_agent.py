@@ -318,3 +318,32 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_navigation_recovery_retries_until_the_document_settles(runner, monkeypatch):
+    """A click that starts a navigation must not end the run.
+
+    Regression: the StalePage recovery path called observe() exactly once, so a
+    document that was still navigating raised StalePage a second time and
+    propagated out of tick(). Any task whose action triggers a real navigation
+    died here instead of recovering.
+    """
+    p = page()
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("e3")))
+    runner.state["browser"].act.side_effect = StalePage("Document is navigating")
+    runner.state["browser"].observe.side_effect = [StalePage("Document is navigating"), p]
+
+    state = runner.command("tick")
+
+    assert runner.state["status"] == "ready"
+    assert runner.state["decision"] is None
+    assert state["page"]["fingerprint"] == p["fingerprint"]
+    assert runner.state["browser"].observe.call_count == 2
+
+
+def test_navigation_recovery_gives_up_after_the_retry_budget(runner):
+    """Waiting for a document must stay bounded when it never settles."""
+    runner.state["browser"].observe.side_effect = StalePage("Document is navigating")
+    with pytest.raises(StalePage, match="navigating"):
+        runner._settle(attempts=3, delay=0)
+    assert runner.state["browser"].observe.call_count == 3
