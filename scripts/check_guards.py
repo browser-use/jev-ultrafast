@@ -79,7 +79,9 @@ def main():
           <button id="off" disabled>Disabled</button>
           <select id="category" aria-label="Category">
             <option>All</option><option>Design</option><option disabled>Unavailable</option>
-          </select></form><aside id="unrelated">News</aside>
+          </select>
+          <textarea id="message" placeholder="Message">Default draft text</textarea></form>
+          <aside id="unrelated">News</aside>
         """))
         page = browser.observe(screenshot=False)
         buy = next(a for a in page["actions"] if a["label"] == "Buy")
@@ -107,6 +109,14 @@ def main():
         assert not any(a["label"] == "Disabled" or a.get("value") == "never expose this" for a in actions)
         assert [a["value"] for a in actions if a["kind"] == "select"] == ["Design"]
         passed.append("native controls expose only supported operations and safe values")
+
+        # A textarea's child text is its default value, not its name; it must not label the field.
+        browser.evaluate("document.querySelector('#message').value='Edited by the user'")
+        page = browser.observe(screenshot=False)
+        message = [a for a in page["actions"] if a.get("value") == "Edited by the user"]
+        assert {a["label"] for a in message} == {"Message", "Open Message"}, message
+        actions = page["actions"]
+        passed.append("textarea is named by its placeholder, not its default text")
 
         select = next(a for a in actions if a["kind"] == "select")
         browser.act(select, page)
