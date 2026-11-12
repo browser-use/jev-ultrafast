@@ -12,10 +12,10 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 CLIENT = httpx.Client(http2=True, timeout=25)
 
 
-def post_json(url, key, body):
+def post_json(url, key, body, headers=None):
     for attempt in range(3):
         try:
-            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}", **(headers or {})})
         except httpx.HTTPError:
             raise RuntimeError("Model connection failed; no action executed.") from None
         if response.status_code in {429, 529, 503} and attempt < 2:
@@ -25,6 +25,46 @@ def post_json(url, key, body):
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
         return response.json()
     raise RuntimeError("Model unavailable")
+
+
+def typesafe_request(body):
+    """Send one System One request to TypeSafe directly, or through Vercel AI Gateway.
+
+    Gateway mode is selected by TYPESAFE_BASE_URL containing "ai-gateway.vercel.sh". The gateway
+    speaks the AI SDK evaluation protocol: model in a header, confidence in providerMetadata, and
+    probabilities rounded to two decimals, so they are renormalised before validation.
+    """
+    key = os.environ["TYPESAFE_API_KEY"]
+    base = os.environ.get("TYPESAFE_BASE_URL", "https://api.typesafe.ai").rstrip("/")
+    if "ai-gateway.vercel.sh" not in base:
+        return post_json(f"{base}/v1/systemone", key, body)
+    model = body["model"]
+    headers = {
+        "ai-gateway-protocol-version": "0.0.1",
+        "ai-gateway-auth-method": "api-key",
+        "ai-evaluation-model-specification-version": "4",
+        "ai-model-id": model,
+    }
+    payload = {"state": body["state"], "questions": body["questions"]}
+    raw = post_json(f"{base}/v4/ai/evaluation-model", key, payload, headers)
+    confidence = raw.get("providerMetadata", {}).get("typesafe", {}).get("confidence", {})
+    answers = {}
+    for name, answer in raw.get("answers", {}).items():
+        probabilities = dict(answer.get("probabilities", {}))
+        total = sum(probabilities.values())
+        if total > 0:
+            probabilities = {k: v / total for k, v in probabilities.items()}
+        answers[name] = {
+            **answer,
+            "probabilities": probabilities,
+            "confidence": confidence.get(name, max(probabilities.values(), default=0)),
+        }
+    usage = raw.get("usage", {})
+    return {
+        "answers": answers,
+        "model": model,
+        "usage": {"input_tokens": usage.get("inputTokens"), "output_tokens": usage.get("outputTokens")},
+    }
 
 
 def validate_choice(answer, ids):
@@ -116,7 +156,7 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    result = typesafe_request(body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
