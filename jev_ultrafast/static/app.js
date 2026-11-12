@@ -18,6 +18,7 @@ const escape = (value) =>
       ],
   );
 const percent = (value) => `${(value * 100).toFixed(value < 0.01 ? 1 : 0)}%`;
+
 async function call(name, body = {}) {
   const response = await fetch(`/api/${name}`, {
     method: "POST",
@@ -30,6 +31,47 @@ async function call(name, body = {}) {
   render();
   return data;
 }
+
+async function loadHealth() {
+  const container = $("preflight-status");
+
+  try {
+    const response = await fetch("/api/health");
+    const health = await response.json();
+
+    const rows = [
+      ["Demo server", health.server],
+      ["Browser Harness", health.harness],
+      ["Chrome / CDP", health.chrome],
+    ];
+
+    container.innerHTML = rows
+      .map(
+        ([label, ok]) =>
+          `<div class="preflight-row">
+            <span>${escape(label)}</span>
+            <strong>${ok ? "Ready" : "Unavailable"}</strong>
+          </div>`,
+      )
+      .join("");
+
+    if (!health.harness || !health.chrome) {
+      container.innerHTML += `
+        <p class="muted">
+          Run <code>uv run browser-harness --doctor</code> to diagnose the browser connection.
+        </p>
+      `;
+    }
+  } catch {
+    container.innerHTML = `
+      <div class="preflight-row">
+        <span>Demo server</span>
+        <strong>Unavailable</strong>
+      </div>
+    `;
+  }
+}
+
 function controls() {
   const live = state?.page && !["done", "blocked"].includes(state.status);
   $("start").disabled = busy;
@@ -242,3 +284,4 @@ fetch("/api/state")
   .catch(() => {
     $("status").textContent = "Cannot reach local demo server";
   });
+loadHealth();
