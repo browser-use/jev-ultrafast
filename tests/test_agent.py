@@ -140,6 +140,40 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
     assert d["choice"] == "e3"
 
 
+def test_choose_openrouter_endpoint_and_model_mapping(monkeypatch):
+    captured = {}
+
+    def post(url, key, body):
+        captured["url"] = url
+        captured["key"] = key
+        captured["model"] = body["model"]
+        return {
+            "model": body["model"],
+            "answers": {
+                "operation": choice(body["questions"]["operation"]["criteria"], "DONE"),
+            },
+        }
+
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test-key")
+    monkeypatch.setenv("TYPESAFE_BASE_URL", "https://openrouter.ai/api/alpha")
+    monkeypatch.setenv("TYPESAFE_MODEL", "jev-latest")
+    monkeypatch.setattr(model, "post_json", post)
+
+    d = model.choose(page(), "Done task", [])
+    assert captured["url"] == "https://openrouter.ai/api/alpha/decisions"
+    assert captured["key"] == "or-test-key"
+    assert captured["model"] == "~typesafe/jev-latest"
+    assert d["choice"] == "DONE"
+
+
+def test_choose_missing_key_raises(monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
+        model.choose(page(), "Find a book", [])
+
+
 def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})

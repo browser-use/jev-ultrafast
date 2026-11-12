@@ -92,8 +92,10 @@ function render() {
     return;
   }
   $("empty").hidden = true;
-  $("screenshot").hidden = false;
-  $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
+  if (page.screenshot) {
+    $("screenshot").hidden = false;
+    $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
+  }
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
   $("action-count").textContent = `${state.elements.length} elements`;
