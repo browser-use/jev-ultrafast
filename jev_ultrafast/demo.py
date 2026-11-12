@@ -21,12 +21,23 @@ AGENT = None
 
 
 def load_environment():
+    """Read .env the way people write it. A real environment variable still wins."""
     path = Path.cwd() / ".env"
-    if path.exists():
-        for line in path.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key, value)
+    if not path.exists():
+        return
+    # utf-8-sig also drops a leading byte-order mark, which editors on Windows write by
+    # default and which would otherwise become part of the first key.
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        entry = line.strip().removeprefix("export ").strip()
+        if not entry or entry.startswith("#") or "=" not in entry:
+            continue
+        key, value = entry.split("=", 1)
+        key, value = key.strip(), value.strip()
+        # Quotes delimit the value; whitespace inside them is part of it.
+        if len(value) > 1 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        if key:
+            os.environ.setdefault(key, value)
 
 
 def response_state():
