@@ -1,11 +1,14 @@
 (() => {
   if (!document.body) return null;
-  const cache = window.__jevFast ||= {ids:new WeakMap(), nodes:new Map(), next:1};
+  const cache = window.__jevFast ||= {ids:new WeakMap(), nodes:new Map(), next:1, covered:new Set()};
   const identity = e => {
     if (!cache.ids.has(e)) cache.ids.set(e,cache.next++);
     const id=cache.ids.get(e); cache.nodes.set(id,e); return id;
   };
-  for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
+  for (const [id,e] of cache.nodes) if (!e.isConnected) {
+    cache.nodes.delete(id); cache.covered.delete(id);
+  }
+  cache.hits=(e,x,y)=>e.contains(document.elementFromPoint(x,y));
   const safe = e => !['password','file','hidden'].includes(e.type);
   const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
@@ -96,12 +99,22 @@
   const semantics=actions.map(({rect,...action})=>action);
   const marker=[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
     document.title,text,semantics,page_key[6]];
-  const omitted_actions=Math.max(0,actions.length-250);
-  actions.splice(250);
-  actions.forEach((a,i)=>a.id='e'+(i+1));
-  if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
-  if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
-  actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
+  // Only recheck previously rejected nodes. Keep occlusion out of the freshness marker.
+  let offered=actions;
+  if (cache.covered.size) {
+    const checked=new Set();
+    for (const {node,rect:{x,y,w,h}} of actions) if (cache.covered.has(node) && !checked.has(node)) {
+      checked.add(node);
+      if (cache.hits(cache.nodes.get(node),x+w/2,y+h/2)) cache.covered.delete(node);
+    }
+    offered=actions.filter(a=>!cache.covered.has(a.node));
+  }
+  const omitted_actions=Math.max(0,offered.length-250);
+  offered.splice(250);
+  offered.forEach((a,i)=>a.id='e'+(i+1));
+  if (scrollY+innerHeight<height-2) offered.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
+  if (scrollY>0) offered.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
+  offered.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
-    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
+    scroll:{y:scrollY,height},actions:offered,marker,page_key,guards,omitted_actions};
 })()

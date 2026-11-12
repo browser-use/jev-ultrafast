@@ -67,6 +67,15 @@ def main():
         assert browser.evaluate("window.clicks") == 1
         passed.append("overlay blocked before input")
 
+        for _ in range(2):
+            covered = browser.observe(screenshot=False)
+            assert not any(a.get("node") == action["node"] for a in covered["actions"])
+            assert covered["marker"] == page["marker"]
+        browser.evaluate("document.body.lastElementChild.remove()")
+        restored = browser.observe(screenshot=False)
+        assert any(a.get("node") == action["node"] for a in restored["actions"])
+        passed.append("a rejected target stays out of later choices until uncovered")
+
         browser.evaluate("document.body.innerHTML=" + repr("""
           <form><p id="price">Total $10</p>
           <button type="button" id="buy">Buy</button>
@@ -109,6 +118,27 @@ def main():
         passed.append("native controls expose only supported operations and safe values")
 
         select = next(a for a in actions if a["kind"] == "select")
+        browser.evaluate("""(() => {
+          const select=document.querySelector('#category'), rect=select.getBoundingClientRect();
+          const cover=document.createElement('div');
+          cover.id='select-cover';
+          cover.style.cssText=`position:fixed;left:${rect.x}px;top:${rect.y}px;
+            width:${rect.width}px;height:${rect.height}px;z-index:9999;background:white`;
+          document.body.append(cover);
+        })()""")
+        try:
+            browser.act(select, page)
+        except StalePage:
+            pass
+        else:
+            raise AssertionError("Covered dropdown did not ask for a fresh observation")
+        assert browser.evaluate("document.querySelector('#category').value") == "All"
+        next_page = browser.observe(screenshot=False)
+        assert not any(a["kind"] == "select" for a in next_page["actions"])
+        assert any(a["label"] == "Buy" for a in next_page["actions"])
+        browser.evaluate("document.querySelector('#select-cover').remove()")
+        page = browser.observe(screenshot=False)
+        select = next(a for a in page["actions"] if a["kind"] == "select")
         browser.act(select, page)
         assert browser.evaluate("document.querySelector('#category').value") == "Design"
         passed.append("native dropdown selects an observed option")
