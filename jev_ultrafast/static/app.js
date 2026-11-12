@@ -45,11 +45,12 @@ function controls() {
 async function perform(fn, label) {
   if (busy) return;
   busy = true;
-  $("error").hidden = true;
   controls();
   $("status").textContent = label;
   try {
     await fn();
+    $("error").textContent = "";
+    $("error").hidden = true;
   } catch (error) {
     automatic = false;
     try {
