@@ -157,6 +157,16 @@ def field_context(goal, action, page, history):
     }
 
 
+def prompt_json(value):
+    """JSON for a model prompt: real characters, never an unencodable one.
+
+    ensure_ascii=True hides non-English text behind \\uXXXX escapes and small models
+    answer {"text": null}. Raw output can still carry a lone UTF-16 surrogate read from
+    the DOM, which cannot be UTF-8 encoded, so escape only those back.
+    """
+    return json.dumps(value, ensure_ascii=False).encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def field_text(context):
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
@@ -179,7 +189,7 @@ def field_text(context):
                 {"role": "system", "content": TEXT_VALUE},
                 {
                     "role": "user",
-                    "content": json.dumps(context),
+                    "content": prompt_json(context),
                 },
             ],
         },
