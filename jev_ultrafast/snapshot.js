@@ -25,6 +25,28 @@
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
   const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
     roles.map(role=>'[role="'+role+'"]').join(',');
+  const customClickable = e => {
+    if (!e || e.matches(selector) || e.parentElement?.closest(selector)) return false;
+    const hasHandler = typeof e.onclick === 'function' || e.hasAttribute('onclick');
+    const hasMarker = e.hasAttribute('data-clickable') || e.hasAttribute('data-action') ||
+      e.getAttribute('data-interactive') === 'true';
+    const tabStop = e.tabIndex >= 0;
+    let pointer = false;
+    try { pointer = getComputedStyle(e).cursor === 'pointer'; } catch {}
+    return hasHandler || hasMarker || tabStop || (pointer && Boolean(name(e)));
+  };
+  const custom = [...document.querySelectorAll('*')].filter(e => {
+    if (!customClickable(e) || e.querySelector(selector)) return false;
+    return true;
+  });
+  const customSet = new Set(custom), customParents = new Set();
+  for (const e of custom) {
+    for (let parent=e.parentElement; parent; parent=parent.parentElement) {
+      if (customSet.has(parent)) customParents.add(parent);
+    }
+  }
+  const customLeaves = custom.filter(e => !customParents.has(e));
+  const candidates = [...document.querySelectorAll(selector), ...customLeaves];
   const role = e => {
     const explicit=e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;
@@ -39,6 +61,7 @@
       if (e.type==='number') return 'spinbutton';
       if (['text','email','url','tel'].includes(e.type)) return 'textbox';
     }
+    if (customClickable(e)) return 'button';
     return null;
   };
   cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
@@ -53,7 +76,7 @@
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
   const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
+  for (const e of candidates) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;

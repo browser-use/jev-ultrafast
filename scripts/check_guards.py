@@ -4,12 +4,20 @@ from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
 
-HTML = """<!doctype html><title>Guard checks</title>
+HTML = """<!doctype html><meta charset="utf-8"><title>Guard checks</title>
 <style>body{margin:30px}button{width:180px;height:50px}#outside{position:absolute;top:3000px}</style>
 <p id="context">Cart total: $10</p>
 <button id="target" onclick="window.clicks=(window.clicks||0)+1">Continue</button>
 <label>City<input id="field" value="Zurich"></label>
 <label><input id="toggle" type="checkbox">Refundable</label>
+<div id="custom-card" style="width:180px;height:50px;cursor:pointer"
+  onclick="window.customClicks=(window.customClicks||0)+1">AI云店</div>
+<span id="custom-edit" style="cursor:pointer"
+  onclick="window.customEdits=(window.customEdits||0)+1">编辑</span>
+<div id="pointer-card" style="width:180px;height:50px;cursor:pointer"
+  onclick="window.pointerClicks=(window.pointerClicks||0)+1">
+  <span style="cursor:pointer">指针卡片</span>
+</div>
 <select aria-label="Category"><option>All</option><option>Design</option></select>
 <p id="outside">Unrelated offscreen text</p>"""
 
@@ -18,6 +26,23 @@ def main():
     browser = Browser("data:text/html," + quote(HTML))
     passed = []
     try:
+        page = browser.observe(screenshot=False)
+        card = next(a for a in page["actions"] if a["label"] == "AI云店")
+        edit = next(a for a in page["actions"] if a["label"] == "编辑")
+        pointer_card = next(a for a in page["actions"] if a["label"] == "指针卡片")
+        assert card["kind"] == edit["kind"] == "click"
+        assert card["role"] == edit["role"] == "button"
+        browser.act(card, page)
+        assert browser.evaluate("window.customClicks") == 1
+        page = browser.observe(screenshot=False)
+        browser.act(edit, page)
+        assert browser.evaluate("window.customEdits") == 1
+        page = browser.observe(screenshot=False)
+        pointer_card = next(a for a in page["actions"] if a["label"] == "指针卡片")
+        browser.act(pointer_card, page)
+        assert browser.evaluate("window.pointerClicks") == 1
+        passed.append("custom clickable div/span expose safe button actions")
+
         page = browser.observe(screenshot=False)
         action = next(a for a in page["actions"] if a["label"] == "Continue")
         browser.evaluate("document.querySelector('#target').style.transform='translateX(200px)'")
