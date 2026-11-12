@@ -86,7 +86,9 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 return self.send(200, json.dumps(response_state()))
         if path == "/demo.mp4":
-            video = ROOT.parent / "docs" / "demo.mp4"
+            video = ROOT / "static" / "demo.mp4"
+            if not video.exists():
+                video = ROOT.parent / "docs" / "demo.mp4"
             if video.exists():
                 return self.send(200, video.read_bytes(), "video/mp4")
         files = {
