@@ -53,6 +53,7 @@
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
   const actions=[];
+  const collected=new Set();
   for (const e of document.querySelectorAll(selector)) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
@@ -60,6 +61,7 @@
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+    collected.add(base.node);
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;
@@ -78,6 +80,50 @@
       actions.push({...base,kind:editable?'fill':'click',value});
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
+  }
+  // Conventional clickables: non-native elements a site wires up with its own click handler
+  // (bare li/div/span dropdown rows and list items). Restricted to overlay layers or
+  // pointer-cursor sibling lists, innermost only, so the element table stays small.
+  const inOverlay = e => {
+    let a=e.parentElement, depth=0;
+    while (a && depth++<8) {
+      const position=getComputedStyle(a).position;
+      if (position==='absolute' || position==='fixed') return true;
+      a=a.parentElement;
+    }
+    return false;
+  };
+  const pointerSiblings = e => {
+    const parent=e.parentElement;
+    if (!parent || !parent.matches('ul,ol,[role="list"],[role="listbox"],[role="menu"],[role="tablist"]')) return false;
+    return [...parent.children].filter(k => k!==e && k.tagName===e.tagName && visible(k) &&
+      getComputedStyle(k).cursor==='pointer').length>=2;
+  };
+  const candidates=[];
+  for (const e of document.querySelectorAll('li,div,span,td,dd,p')) {
+    if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+    if (getComputedStyle(e).cursor!=='pointer') continue;
+    if (e.querySelector('input,select,textarea,button,a[href],[contenteditable="true"]')) continue;
+    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+    if (r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    const label=name(e).trim().slice(0,120);
+    if (!label) continue;
+    const list=pointerSiblings(e);
+    if (!list && !inOverlay(e)) continue;
+    candidates.push({element:e,label,list});
+    if (candidates.length>=80) break;
+  }
+  let extra=0;
+  for (const {element:e,label,list} of candidates) {
+    if (extra>=40) break;
+    const node=identity(e);
+    if (collected.has(node)) continue;
+    if (candidates.some(c => c.element!==e && e.contains(c.element))) continue;
+    collected.add(node);
+    const r=e.getBoundingClientRect();
+    actions.push({node,role:list?'option':'button',label,rect:{x:r.x,y:r.y,w:r.width,h:r.height},
+      kind:'click',value:''});
+    extra++;
   }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   const range=document.createRange(); let node,length=0;

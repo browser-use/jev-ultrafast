@@ -41,6 +41,21 @@ def close_browser():
         AGENT = None
 
 
+def start_url(scenario, custom):
+    """Custom http(s) URL when supplied, otherwise the preset's start page."""
+    custom = (custom or "").strip()
+    if custom:
+        parsed = urlparse(custom)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Start URL must be an absolute http(s) URL")
+        if len(custom) > 2000:
+            raise ValueError("Start URL is too long")
+        return custom
+    if scenario == "flights":
+        return "https://www.google.com/travel/flights?hl=en"
+    return f"{ORIGIN}/fixture.html?scenario={scenario}"
+
+
 def command(name, body):
     global AGENT
     if name == "reset":
@@ -50,11 +65,10 @@ def command(name, body):
         goal = body.get("goal", "").strip()
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
+        url = start_url(scenario, body.get("url"))
         close_browser()
         AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
+            url,
             goal,
             screenshots=True,
             record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,
