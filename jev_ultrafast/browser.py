@@ -51,20 +51,30 @@ class Browser:
                     expression="""(action => new Promise(resolve => {
                       const field=window.__jevFast?.nodes.get(action.node);
                       const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
+                      const navigation=action.kind==='click' && action.navigation &&
+                        ['_self','_top','_parent'].includes(action.navigation.target.toLowerCase()) &&
+                        action.navigation.url!==action.source_url;
                       let frames=0, stopped=false;
                       const finish=()=>{stopped=true;resolve()};
-                      setTimeout(finish,autocomplete ? 200 : 50);
+                      setTimeout(finish,navigation ? 1500 : autocomplete ? 200 : 50);
                       const ready=()=>{
                         if (stopped) return;
-                        const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
-                          .split(/\\s+/).filter(Boolean);
-                        const roots=ids.length ? ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
-                        const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
-                        if (++frames>=2 && (!autocomplete || options.some(e=>{
-                          const r=e.getBoundingClientRect();
-                          return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
-                            e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-                        }))) finish();
+                        let suggestionsReady=true;
+                        if (autocomplete) {
+                          const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
+                            .split(/\\s+/).filter(Boolean);
+                          const roots=ids.length ?
+                            ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
+                          const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
+                          suggestionsReady=options.some(e=>{
+                            const r=e.getBoundingClientRect();
+                            return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
+                              e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+                          });
+                        }
+                        const navigated=location.href!==action.source_url ||
+                          performance.timeOrigin!==action.source_document;
+                        if (++frames>=2 && (!navigation || navigated) && suggestionsReady) finish();
                         else requestAnimationFrame(ready);
                       };
                       requestAnimationFrame(ready);
@@ -104,6 +114,8 @@ class Browser:
             time.sleep(0.1)
         result = browser_operation({"operation": "act", "session": self.session, "action": action, "text": text})
         self.after_input = action if action["kind"] != "wait" else None
+        if self.after_input and action.get("navigation"):
+            self.after_input = {**action, "source_url": page["url"], "source_document": page["marker"][0]}
         return result
 
     def close(self):
