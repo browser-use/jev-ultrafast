@@ -50,24 +50,69 @@ class Browser:
                     "Runtime.evaluate",
                     expression="""(action => new Promise(resolve => {
                       const field=window.__jevFast?.nodes.get(action.node);
-                      const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
-                      let frames=0, stopped=false;
+                      const combobox=field?.getAttribute('role')==='combobox';
+                      const autocomplete=action.kind==='fill' && combobox;
+                      let ticks=0, stopped=false, rafId=0, timerId=0;
+                      const start=performance.now();
                       const finish=()=>{stopped=true;resolve()};
-                      setTimeout(finish,autocomplete ? 200 : 50);
-                      const ready=()=>{
-                        if (stopped) return;
+                      const laid=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0};
+                      const visible=e=>{
+                        const r=e.getBoundingClientRect();
+                        return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
+                          e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+                      };
+                      const scopedOptions=()=>{
                         const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'')
                           .split(/\\s+/).filter(Boolean);
                         const roots=ids.length ? ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
-                        const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
-                        if (++frames>=2 && (!autocomplete || options.some(e=>{
-                          const r=e.getBoundingClientRect();
-                          return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
-                            e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-                        }))) finish();
-                        else requestAnimationFrame(ready);
+                        return roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
                       };
-                      requestAnimationFrame(ready);
+                      const portalOpen=()=>field?.getAttribute('aria-expanded')==='true';
+                      const portalOptions=()=>{
+                        // Menus often render into a body-level portal whose real listbox is NOT
+                        // the aria-controls target (observed on Google Flights: aria-controls
+                        // names an empty span while the options live in a detached ul). When the
+                        // clicked control reports itself expanded, scan for popup items globally.
+                        if (!portalOpen()) return [];
+                        return [...document.querySelectorAll(
+                          '[role="option"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]')]
+                          .filter(e=>e.closest('[role="listbox"],[role="menu"]'));
+                      };
+                      const tick=()=>{
+                        if (stopped) return;
+                        cancelAnimationFrame(rafId); clearTimeout(timerId);
+                        const scoped=scopedOptions();
+                        const candidates=(autocomplete||scoped.length) ? scoped : portalOptions();
+                        const laidOut=candidates.filter(laid);
+                        // Laid-out but invisible items are a popup mid-fade. Fades are driven by
+                        // rendering frames, and background tabs throttle rAF (~2 fps on Linux;
+                        // focus emulation does not lift it), so a 0.25 s transition can span more
+                        // than a wall-clock second. Observing during the fade would see an empty
+                        // popup and wrongly treat the goal as BLOCKED. The generous cap only
+                        // applies to a clicked popup that still reports itself open, so leftover
+                        // hidden items from an already-closed menu — and the typing/autocomplete
+                        // path, which keeps its own 200 ms budget — never stall the observation.
+                        const fading=!autocomplete && portalOpen() && laidOut.length>0 && !laidOut.some(visible);
+                        // Popup items can also be created asynchronously after the click: the
+                        // trigger already reports aria-expanded=true while the portal is still
+                        // empty (and the page behind it already aria-hidden). Give an expanded
+                        // popup control a short appearance grace before observing an empty menu.
+                        const awaitingPopup=!autocomplete && !fading && laidOut.length===0 && portalOpen();
+                        const elapsed=performance.now()-start;
+                        // Caps are bounded but generous: on rAF-throttled background tabs a
+                        // sub-second CSS fade was measured to span 1.5-2.5 s of wall-clock time.
+                        const cap=fading ? 3000 : (awaitingPopup ? 1000 : (autocomplete ? 200 : 50));
+                        if (elapsed>=cap) finish();
+                        else if (ticks++>=1 && !fading && !awaitingPopup &&
+                                 (!autocomplete || scoped.some(visible))) finish();
+                        else {
+                          // Poll from a timer as well as rAF; whichever fires first cancels the
+                          // other. A throttled tab keeps checking, a foreground tab keeps frame rate.
+                          rafId=requestAnimationFrame(tick);
+                          timerId=setTimeout(tick,50);
+                        }
+                      };
+                      tick();
                     }))(""" + json.dumps(action) + ")",
                     awaitPromise=True,
                     returnByValue=True,

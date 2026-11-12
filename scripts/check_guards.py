@@ -124,6 +124,69 @@ def main():
         assert value == "Generated", repr(value)
         assert any(a.get("role") == "option" for a in page["actions"])
         passed.append("real text input waits for asynchronous combobox suggestions")
+
+        # Regression: a popup menu that renders into a body-level portal (aria-controls names an
+        # empty container) and fades in slower than the 50 ms post-click wait must not be
+        # observed as empty. Mirrors Google Flights' ticket-type menu.
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <div id="tt" role="combobox" aria-expanded="false" aria-controls="lb-empty"
+               tabindex="0" style="width:220px;height:40px">Ticket type. Round trip</div>
+          <span role="listbox" id="lb-empty"></span>
+        """))
+        browser.evaluate("""document.querySelector('#tt').addEventListener('click', () => {
+            const tt = document.querySelector('#tt');
+            tt.setAttribute('aria-expanded', 'true');
+            const portal = document.createElement('ul');
+            portal.setAttribute('role', 'listbox');
+            portal.style.opacity = '0';
+            for (const label of ['Round trip', 'One way', 'Multi-city']) {
+              const li = document.createElement('li');
+              li.setAttribute('role', 'option');
+              li.textContent = label;
+              li.style.cssText = 'width:180px;height:38px';
+              portal.append(li);
+            }
+            document.body.append(portal);
+            setTimeout(() => { portal.style.opacity = '1'; }, 700);
+        })""")
+        page = browser.observe(screenshot=False)
+        ticket_type = next(a for a in page["actions"] if a["label"].startswith("Ticket type"))
+        browser.act(ticket_type, page)
+        page = browser.observe(screenshot=False)
+        assert {a["label"] for a in page["actions"] if a.get("role") == "option"} == {
+            "Round trip", "One way", "Multi-city"}
+        passed.append("portal popup that fades in after the click is observed, not misread as empty")
+
+        # Regression: the portal itself can be created asynchronously — the trigger already
+        # reports aria-expanded=true while no popup item exists yet. The post-click wait must
+        # give the menu an appearance grace instead of observing an empty page.
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <div id="tt2" role="combobox" aria-expanded="false" tabindex="0"
+               style="width:220px;height:40px">Ticket type. Round trip</div>
+        """))
+        browser.evaluate("""document.querySelector('#tt2').addEventListener('click', () => {
+            document.querySelector('#tt2').setAttribute('aria-expanded', 'true');
+            setTimeout(() => {
+              const portal = document.createElement('ul');
+              portal.setAttribute('role', 'menu');
+              for (const label of ['Round trip', 'One way']) {
+                const li = document.createElement('li');
+                li.setAttribute('role', 'menuitem');
+                li.textContent = label;
+                li.style.cssText = 'width:180px;height:38px';
+                portal.append(li);
+              }
+              document.body.append(portal);
+            }, 250);
+        })""")
+        page = browser.observe(screenshot=False)
+        ticket_type = next(a for a in page["actions"] if a["label"].startswith("Ticket type"))
+        browser.act(ticket_type, page)
+        page = browser.observe(screenshot=False)
+        assert {a["label"] for a in page["actions"] if a.get("role") == "menuitem"} == {
+            "Round trip", "One way"}
+        passed.append("asynchronously created portal menu gets an appearance grace, not an empty observation")
+
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
