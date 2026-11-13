@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="demo-token" content="__TOKEN__" />
     <title>Jev Ultrafast · Browser Use</title>
+    <script>
+      try {
+        if (localStorage.getItem("demo-theme") === "dark") {
+          document.documentElement.dataset.theme = "dark";
+        }
+      } catch {}
+    </script>
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -13,7 +20,17 @@
       <a href="/" aria-label="Homepage" class="brand"
         >browser<span>use</span> <i>×</i> TypeSafe</a
       >
-      <div class="local"><span class="dot"></span> Jev Ultrafast</div>
+      <div class="header-actions">
+        <div class="local"><span class="dot"></span> Jev Ultrafast</div>
+        <button
+          type="button"
+          id="theme-toggle"
+          class="theme-toggle"
+          aria-pressed="false"
+        >
+          Dark mode
+        </button>
+      </div>
     </header>
     <main>
       <section class="intro">
