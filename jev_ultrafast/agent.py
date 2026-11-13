@@ -9,6 +9,21 @@ from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
 
+def stalled(history):
+    """A run is stalled when its last three actions show no proven progress.
+
+    Only an explicit ``page_changed=True`` counts as progress. An unobserved
+    outcome (``page_changed=None`` after a failed post-action observation)
+    must not reset the three-repeat no-progress check, or a stuck run keeps
+    spending model calls instead of stopping.
+    See https://github.com/browser-use/jev-ultrafast/issues/94.
+    """
+    recent = history[-3:]
+    return len(recent) == 3 and all(
+        entry["page_changed"] is not True and entry["kind"] != "wait" for entry in recent
+    )
+
+
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
@@ -58,9 +73,12 @@ class Agent:
                 return self.command("act", {"fingerprint": state["page"]["fingerprint"]})
             except StalePage:
                 state["decision"] = None
-                state["status"] = "ready"
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
-                state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                # Evaluate before recovering: a failed recovery observation
+                # must not erase the stalled result and re-enable decisions.
+                state["status"] = "blocked" if stalled(state["history"]) else "ready"
+                if state["status"] == "ready":
+                    state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                    state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
         elif name == "predict":
             if not state["browser"]:
@@ -139,7 +157,17 @@ class Agent:
                     "elapsed_ms": state["elapsed_ms"],
                 }
             )
-            state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            try:
+                state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            except Exception:
+                # The action already executed and stays logged with
+                # page_changed=None. Still apply the no-progress check so a
+                # failed observation cannot disable it, then re-raise to
+                # preserve the existing error contract with callers.
+                state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                if stalled(state["history"]):
+                    state["status"] = "blocked"
+                raise
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             state["history"][-1].update(
                 page_changed=state["page"]["fingerprint"] != page["fingerprint"],
@@ -150,12 +178,7 @@ class Agent:
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )
-            repeated = state["history"][-3:]
-            state["status"] = (
-                "blocked"
-                if len(repeated) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in repeated)
-                else "ready"
-            )
+            state["status"] = "blocked" if stalled(state["history"]) else "ready"
         else:
             raise ValueError("Unknown command")
         return self.snapshot()
