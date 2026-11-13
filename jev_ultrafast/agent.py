@@ -16,32 +16,36 @@ class Agent:
             raise ValueError("Supply a task")
         plan = [task]
         self.pending_text = None
-        self.browser = Browser(url)
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
+        self.browser = Browser(url)
         try:
             page = self.browser.observe(screenshot=self.screenshots)
-        except Exception:
-            self.browser.close()
+            self.state = dict(
+                browser=self.browser,
+                goal="\n".join(plan),
+                page=page,
+                decision=None,
+                history=[],
+                status="ready",
+                plan=plan,
+                plan_index=0,
+                decisions=[],
+                text_calls=[],
+                elapsed_ms=0,
+                started_at=None,
+                record=bool(self.record_dir),
+            )
+            if self.record_dir:
+                self.record_dir.mkdir(parents=True, exist_ok=True)
+                (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
+        except BaseException as error:
+            # Until construction returns, this is the only owner that can close the browser.
+            try:
+                self.browser.close()
+            except Exception as cleanup_error:
+                error.add_note(f"Failed to close the owned browser tab: {cleanup_error}")
             raise
-        self.state = dict(
-            browser=self.browser,
-            goal="\n".join(plan),
-            page=page,
-            decision=None,
-            history=[],
-            status="ready",
-            plan=plan,
-            plan_index=0,
-            decisions=[],
-            text_calls=[],
-            elapsed_ms=0,
-            started_at=None,
-            record=bool(self.record_dir),
-        )
-        if self.record_dir:
-            self.record_dir.mkdir(parents=True, exist_ok=True)
-            (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
 
     def snapshot(self):
         return {
@@ -170,5 +174,10 @@ class Agent:
     def __enter__(self):
         return self
 
-    def __exit__(self, *_args):
-        self.close()
+    def __exit__(self, _error_type, error, _traceback):
+        try:
+            self.close()
+        except Exception as cleanup_error:
+            if error is None:
+                raise
+            error.add_note(f"Failed to close the owned browser tab: {cleanup_error}")
