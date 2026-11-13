@@ -1,5 +1,6 @@
 """Local-browser freshness/execution regressions. No model calls or external websites."""
 
+import json
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
@@ -127,6 +128,45 @@ def main():
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
+
+        for control, expected in [
+            ('<input name="caption" aria-label="Button text" value="Draft">', [["caption", "Publish"]]),
+            ('<input name="innerText" aria-label="Button text" value="Draft">', [["innerText", "Publish"]]),
+            ('<input id="innerText" name="caption" aria-label="Button text" value="Draft">', [["caption", "Publish"]]),
+            ('<textarea name="innerText" aria-label="Button text">Draft</textarea>', [["innerText", "Publish"]]),
+            ('<input name="innerText" aria-label="Button text" value="Draft">'
+             '<input name="innerText" type="hidden" value="Template">',
+             [["innerText", "Publish"], ["innerText", "Template"]]),
+        ]:
+            browser.evaluate("window.saves=0; document.body.innerHTML=" + repr("""
+              <form><p id="context">Editing the submit button</p>
+              <p hidden id="hidden-context">Hidden detail</p>
+            """ + control + """
+              <button type="button" onclick="window.saves++;document.querySelector('output').textContent=
+                JSON.stringify([...new FormData(document.querySelector('form')).entries()])">Save</button>
+              </form><output></output>
+            """))
+            page = browser.observe(screenshot=False)
+            field = next(a for a in page["actions"] if a["kind"] == "fill" and a["label"] == "Button text")
+            browser.act(field, page, text="Publish")
+            page = browser.observe(screenshot=False)
+            save = next(a for a in page["actions"] if a["label"] == "Save")
+            browser.act(save, page)
+            assert json.loads(browser.evaluate("document.querySelector('output').textContent")) == expected
+            before = browser.observe(screenshot=False)
+            save = next(a for a in before["actions"] if a["label"] == "Save")
+            browser.evaluate("document.querySelector('#hidden-context').textContent='Changed hidden detail'")
+            assert browser.fresh(before, save)
+            browser.evaluate("document.querySelector('#context').textContent='Editing the delete button'")
+            assert not browser.fresh(before, save)
+            try:
+                browser.act(save, before)
+            except StalePage:
+                pass
+            else:
+                raise AssertionError("Changed form context allowed a stale save")
+            assert browser.evaluate("window.saves") == 1
+        passed.append("form field names preserve native context, saved values and stale-action checks")
     finally:
         browser.close()
     print("\n".join(passed))
