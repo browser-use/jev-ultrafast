@@ -12,6 +12,18 @@ from jev_ultrafast import model
 from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
 
 
+def test_post_json_raises_clear_error_on_invalid_json(monkeypatch):
+    """A 200 with a non-JSON body must read as a model failure, not leak a
+    low-level decoder error (#87)."""
+    response = Mock()
+    response.is_error = False
+    response.json = Mock(side_effect=json.JSONDecodeError("Expecting value", "doc", 0))
+    monkeypatch.setattr(model.CLIENT, "post", lambda *a, **k: response)
+
+    with pytest.raises(RuntimeError, match="invalid JSON; no action executed"):
+        model.post_json("https://provider.test/v1/chat", "key", {})
+
+
 def page():
     state = {
         "url": "https://example.test/",
