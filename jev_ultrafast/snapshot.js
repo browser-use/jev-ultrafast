@@ -23,7 +23,8 @@
   };
   const roles=['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio',
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
-  const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
+  const selector='a[href],button,input,textarea,select,summary,'+
+    '[contenteditable=""],[contenteditable="true" i],[contenteditable="plaintext-only" i],'+
     roles.map(role=>'[role="'+role+'"]').join(',');
   const role = e => {
     const explicit=e.getAttribute('role');
