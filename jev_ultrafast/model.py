@@ -78,74 +78,12 @@ def action_space(actions):
     return elements, targets, controls
 
 
-def choose(state, goal, history):
+def choose(state, goal, history, engine=None):
+    from .engines import get_decision_engine
     elements, targets, controls = action_space(state["actions"])
-    labels = {
-        "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
-        "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
-        "SELECT": "Select an observed dropdown value.",
-    }
-    operations = {key: labels[key] for key in targets}
-    operations.update({key: value["label"] for key, value in controls.items()})
-    operations.update(DONE="Every requirement is visibly satisfied.", BLOCKED="No supported operation can progress.")
-    questions = {
-        "operation": {"type": "choice", "criteria": operations, "instructions": {"goal": goal, "rules": NEXT_ACTION}}
-    }
-    for operation, candidates in targets.items():
-        questions[operation.lower() + "_target"] = {
-            "type": "choice",
-            "criteria": {
-                index: {
-                    "element": f"[{index}] {a['label']}",
-                    "current_value": a.get("current_value", a.get("value", "")),
-                    **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
-                }
-                for index, a in candidates.items()
-            },
-            "instructions": {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
-        }
-    body = {
-        "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
-        "state": {
-            "page": {k: state[k] for k in ("url", "title", "text")},
-            "elements": elements,
-            "recent_actions": [
-                {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
-            ],
-        },
-        "questions": questions,
-    }
-    started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
-    operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
-    operation = operation_answer["choice"]
-    target = None
-    target_answer = None
-    probabilities = {}
-    if operation in targets:
-        # Unused target heads cannot cause an action. Validate the head selected by the operation.
-        target_answer = validate_choice(result["answers"].get(operation.lower() + "_target", {}), targets[operation])
-        target = target_answer["choice"]
-        choice = targets[operation][target]["id"]
-        probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
-    else:
-        choice = controls[operation]["id"] if operation in controls else operation
-        probabilities[choice] = operation_answer["probabilities"][operation]
-    return {
-        "choice": choice,
-        "operation": operation,
-        "target": target,
-        "confidence": operation_answer["confidence"],
-        "probabilities": probabilities,
-        "operation_probabilities": operation_answer["probabilities"],
-        "target_probabilities": target_answer["probabilities"] if target_answer else {},
-        "target_confidence": target_answer["confidence"] if target_answer else None,
-        "raw_answers": result["answers"],
-        "model": result["model"],
-        "usage": result.get("usage", {}),
-        "latency_ms": round((time.perf_counter() - started) * 1000),
-        "request": body,
-    }
+    active_engine = engine or get_decision_engine()
+    return active_engine.choose(state, goal, history, elements, targets, controls)
+
 
 
 def field_context(goal, action, page, history):
