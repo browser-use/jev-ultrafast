@@ -166,6 +166,10 @@ def field_text(context):
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    # Google's OpenAI-compatible shim rejects any unknown top-level field with a
+    # 400, including "reasoning". Send no reasoning key at all for that endpoint.
+    if "generativelanguage.googleapis.com" in base or os.environ.get("TEXT_MODEL_REASONING") == "omit":
+        reasoning = {}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",

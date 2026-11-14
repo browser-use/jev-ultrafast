@@ -151,6 +151,28 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
+def test_google_endpoint_sends_no_reasoning_field(monkeypatch):
+    """Google's OpenAI shim 400s on any unknown top-level field, including reasoning."""
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+    model.field_text(model.field_context('Fly to "Zurich"', page()["actions"][0], page(), []))
+    body = post.call_args.args[2]
+    assert "reasoning" not in body and "thinking" not in body
+
+
+def test_reasoning_omit_drops_the_field_for_any_provider(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "omit")
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+    model.field_text(model.field_context('Fly to "Zurich"', page()["actions"][0], page(), []))
+    assert "reasoning" not in post.call_args.args[2]
+
+
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
