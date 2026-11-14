@@ -5,7 +5,8 @@ import time
 from pathlib import Path
 
 from .browser import Browser, StalePage
-from .model import action_space, choose, field_context, field_text
+from .model import action_space, field_context, field_text
+from .model import choose_joint as choose
 from .questions import MAX_STEPS
 
 
@@ -65,13 +66,13 @@ class Agent:
         elif name == "predict":
             if not state["browser"]:
                 raise ValueError("Start a demo first")
+            if state["status"] in {"done", "blocked"}:
+                raise ValueError("This run has stopped. Start a fresh demo.")
             if state["started_at"] is None:
                 state["started_at"] = time.perf_counter()
             if not state["browser"].fresh(state["page"]):
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
             state["decision"] = None
-            if state["status"] in {"done", "blocked"}:
-                raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
             state["decision"] = choose(state["page"], state["goal"], state["history"])
@@ -91,9 +92,19 @@ class Agent:
             state["decision"] = None
             selected = decision["choice"]
             if selected in {"DONE", "BLOCKED"}:
-                if not state["browser"].fresh(page):
-                    state["status"] = "ready"
-                    raise StalePage("Page changed since the decision. Choose again.")
+                try:
+                    if not state["browser"].fresh(page):
+                        raise StalePage("Page changed since the decision. Choose again.")
+                except StalePage:
+                    if selected != "BLOCKED":
+                        state["status"] = "ready"
+                        raise
+                    # Refuse further work, not a validation of the stale model verdict.
+                    state["stop_reason"] = {
+                        "code": "blocked_freshness_unconfirmed",
+                        "message": "Stopped safely because the BLOCKED decision could not be freshness-validated; "
+                                   "current task feasibility is unknown.",
+                    }
                 state["status"] = "done" if selected == "DONE" else "blocked"
                 state["plan_index"] = int(selected == "DONE")
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
