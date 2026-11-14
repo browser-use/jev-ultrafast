@@ -59,7 +59,17 @@ class Agent:
             except StalePage:
                 state["decision"] = None
                 state["status"] = "ready"
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                # A recovery observation is a read, not a mutation, so retrying is safe.
+                # Without this, a navigation still in flight escapes the handler and
+                # crashes the run instead of re-observing the settled page.
+                for attempt in range(3):
+                    try:
+                        state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                        break
+                    except StalePage:
+                        if attempt == 2:
+                            raise
+                        time.sleep(0.25 * (attempt + 1))
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
         elif name == "predict":

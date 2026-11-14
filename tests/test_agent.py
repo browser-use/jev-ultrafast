@@ -318,3 +318,21 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_recovery_observation_retries_while_the_document_is_navigating(runner):
+    # The decision went stale and the recovery read landed mid-navigation too.
+    runner.state["browser"].fresh.side_effect = StalePage("Document navigating")
+    runner.state["browser"].observe.side_effect = [StalePage("Document is navigating"), page()]
+    runner.command("tick")
+    assert runner.state["status"] == "ready"
+    assert runner.state["decision"] is None
+    assert runner.state["browser"].observe.call_count == 2
+
+
+def test_recovery_observation_gives_up_after_bounded_retries(runner):
+    runner.state["browser"].fresh.side_effect = StalePage("Document navigating")
+    runner.state["browser"].observe.side_effect = StalePage("Document is navigating")
+    with pytest.raises(StalePage):
+        runner.command("tick")
+    assert runner.state["browser"].observe.call_count == 3
