@@ -108,8 +108,13 @@ class Browser:
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
-            self.target = None
+            # Drop the reference first: a tab the user already closed is still a closed tab,
+            # and a failure here must not strand the caller with an unusable browser.
+            target, self.target = self.target, None
+            try:
+                cdp("Target.closeTarget", targetId=target)
+            except RuntimeError:
+                pass
 
 
 def fingerprint(state):

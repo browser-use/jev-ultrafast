@@ -132,7 +132,15 @@ function render() {
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
-  $("step-count").textContent = `${state.history.length} actions · ${(state.elapsed_ms / 1000).toFixed(2)} s`;
+  const secs = (ms) => (ms / 1000).toFixed(2);
+  // Two boundaries: agent time starts at the first prediction, wall time at "Start demo".
+  const wall = state.wall_ms != null ? ` · ${secs(state.wall_ms)} s wall` : "";
+  $("step-count").textContent =
+    `${state.history.length} actions · ${secs(state.elapsed_ms)} s agent${wall}`;
+  $("step-count").title = state.startup_ms != null
+    ? `Agent ${secs(state.elapsed_ms)} s (from first prediction) · wall ${secs(state.wall_ms)} s ` +
+      `(from Start demo, includes ${secs(state.startup_ms)} s browser startup and first page load)`
+    : "";
   $("model-state").textContent = JSON.stringify(
     d?.request || {
       goal: state.goal,

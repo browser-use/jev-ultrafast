@@ -165,7 +165,9 @@ def field_text(context):
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+        # Inception's own endpoint ignores OpenRouter's reasoning object; it honours reasoning_effort.
+        native_inception = "api.inceptionlabs.ai/" in base
+        reasoning = {"reasoning_effort": "none"} if native_inception else {"reasoning": {"enabled": False}}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",

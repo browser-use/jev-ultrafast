@@ -11,6 +11,10 @@ from .questions import MAX_STEPS
 
 class Agent:
     def __init__(self, url, goals, *, record_dir=None, screenshots=False):
+        # Human wall clock. elapsed_ms deliberately starts at the first prediction; this starts
+        # when the run was requested, so browser startup and the first page load stay visible.
+        self.started_wall = time.perf_counter()
+        self.wall_frozen = False
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
@@ -24,6 +28,7 @@ class Agent:
         except Exception:
             self.browser.close()
             raise
+        startup_ms = round((time.perf_counter() - self.started_wall) * 1000)
         self.state = dict(
             browser=self.browser,
             goal="\n".join(plan),
@@ -37,6 +42,8 @@ class Agent:
             text_calls=[],
             elapsed_ms=0,
             started_at=None,
+            startup_ms=startup_ms,
+            wall_ms=startup_ms,
             record=bool(self.record_dir),
         )
         if self.record_dir:
@@ -44,6 +51,10 @@ class Agent:
             (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
 
     def snapshot(self):
+        if not self.wall_frozen:
+            self.state["wall_ms"] = round((time.perf_counter() - self.started_wall) * 1000)
+            # Stop the clock once the run has stopped, so later polls keep reporting the run.
+            self.wall_frozen = self.state["status"] in {"done", "blocked"}
         return {
             **{k: v for k, v in self.state.items() if k != "browser"},
             "elements": action_space(self.state["page"]["actions"])[0],

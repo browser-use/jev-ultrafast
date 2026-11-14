@@ -8,8 +8,8 @@ from unittest.mock import Mock
 import pytest
 
 from jev_ultrafast import agent as loop
-from jev_ultrafast import model
-from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
+from jev_ultrafast import demo, model
+from jev_ultrafast.browser import Browser, StalePage, browser_operation, fingerprint
 
 
 def page():
@@ -162,6 +162,8 @@ def runner():
     a = loop.Agent.__new__(loop.Agent)
     a.screenshots = False
     a.pending_text = None
+    a.started_wall = time.perf_counter()
+    a.wall_frozen = False
     p = page()
     a.state = {
         "browser": Mock(fresh=Mock(return_value=True), observe=Mock(return_value=p)),
@@ -318,3 +320,52 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_closing_a_vanished_tab_does_not_block_the_next_run(monkeypatch):
+    """A tab the user closed is already in the state close() wants; resetting must still work."""
+    browser = Browser.__new__(Browser)
+    browser.target = "TARGET"
+    gone = Mock(side_effect=RuntimeError({"code": -32602, "message": "No target with given id found"}))
+    monkeypatch.setattr("jev_ultrafast.browser.cdp", gone)
+    browser.close()
+    assert browser.target is None
+    assert gone.call_count == 1
+    browser.close()
+    assert gone.call_count == 1
+
+
+def test_reset_clears_a_browser_that_failed_to_close(monkeypatch):
+    agent = Mock()
+    agent.close.side_effect = RuntimeError({"code": -32602, "message": "No target with given id found"})
+    monkeypatch.setattr(demo, "AGENT", agent)
+    with pytest.raises(RuntimeError):
+        demo.close_browser()
+    assert demo.AGENT is None
+
+
+def test_wall_clock_covers_the_startup_that_agent_time_excludes(monkeypatch):
+    """elapsed_ms starts at the first prediction; wall_ms must already account for startup."""
+    observed = page()
+
+    def slow_browser(_url):
+        time.sleep(0.05)  # browser attach, navigation and first page load
+        return Mock(observe=Mock(return_value=observed), fresh=Mock(return_value=True), close=Mock())
+
+    monkeypatch.setattr(loop, "Browser", slow_browser)
+    a = loop.Agent("about:blank", "Find a book")
+    assert a.state["elapsed_ms"] == 0
+    assert a.state["startup_ms"] >= 50
+    assert a.state["wall_ms"] >= a.state["startup_ms"]
+
+
+def test_wall_clock_stops_when_the_run_stops(runner):
+    runner.state["status"] = "ready"
+    time.sleep(0.01)
+    running = runner.snapshot()["wall_ms"]
+    runner.state["status"] = "done"
+    final = runner.snapshot()["wall_ms"]
+    assert final >= running
+    time.sleep(0.01)
+    assert runner.snapshot()["wall_ms"] == final
+
