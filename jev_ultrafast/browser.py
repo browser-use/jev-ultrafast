@@ -146,9 +146,19 @@ def browser_operation(request):
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+              // Inline links can have multiple fragments with unrelated content between them.
+              // Resolve a hit-tested point before dispatching any input; never retry a click.
+              const rects=[e.getBoundingClientRect(),...e.getClientRects()];
+              let point=null;
+              for (const r of rects) {
+                if (!r.width || !r.height) continue;
+                const left=Math.max(0,r.left), right=Math.min(innerWidth,r.right);
+                const top=Math.max(0,r.top), bottom=Math.min(innerHeight,r.bottom);
+                if (right<=left || bottom<=top) continue;
+                const x=(left+right)/2, y=(top+bottom)/2;
+                if (e.contains(document.elementFromPoint(x,y))) { point={x,y}; break; }
+              }
+              if (!point) return null;
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
@@ -156,7 +166,7 @@ def browser_operation(request):
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
-              return {x,y};
+              return point;
             })(""" + json.dumps(action) + ")")
             if target is None:
                 if kind == "select":
