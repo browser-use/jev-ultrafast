@@ -2,6 +2,7 @@
 
 import atexit
 import json
+import locale
 import os
 import secrets
 import threading
@@ -20,10 +21,20 @@ LOCK = threading.Lock()
 AGENT = None
 
 
+def _read_env_text(path: Path) -> str:
+    # .env is user-authored: honour utf-8 (with or without BOM) first, then the
+    # locale codec, so a GBK-encoded file on Windows still loads instead of
+    # raising UnicodeDecodeError and blocking the demo at startup.
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return path.read_text(encoding=locale.getpreferredencoding(False))
+
+
 def load_environment():
     path = Path.cwd() / ".env"
     if path.exists():
-        for line in path.read_text().splitlines():
+        for line in _read_env_text(path).splitlines():
             if "=" in line and not line.startswith("#"):
                 key, value = line.split("=", 1)
                 os.environ.setdefault(key, value)
@@ -98,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in files:
             return self.send(404, "Not found", "text/plain")
         name, mime = files[path]
-        content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
+        content = (ROOT / "static" / name).read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)
         self.send(200, content, mime + "; charset=utf-8")
 
     def do_POST(self):
