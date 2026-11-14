@@ -36,9 +36,14 @@ def response_state():
 
 def close_browser():
     global AGENT
-    if AGENT:
-        AGENT.close()
-        AGENT = None
+    agent, AGENT = AGENT, None
+    if agent is None:
+        return
+    try:
+        agent.close()
+    except Exception:
+        # Start demo must proceed even if the previous tab is already gone.
+        pass
 
 
 def command(name, body):
