@@ -44,6 +44,7 @@ function controls() {
 }
 async function perform(fn, label) {
   if (busy) return;
+  const historyLength = state?.history?.length ?? 0;
   busy = true;
   $("error").hidden = true;
   controls();
@@ -60,7 +61,11 @@ async function perform(fn, label) {
     }
     $("error").textContent = error.message;
     $("error").hidden = false;
-    $("status").textContent = "Paused · needs attention";
+    const interrupted = (state?.history?.length ?? 0) > historyLength &&
+      state.history.at(-1).execution === "unknown";
+    $("status").textContent = interrupted
+      ? "Stopped · inspect the interrupted action"
+      : "Paused · needs attention";
   } finally {
     busy = false;
     controls();
@@ -84,7 +89,9 @@ function render() {
     ready: "Page observed · ready for a decision",
     predicted: "Choice ready · inspect or execute",
     done: "Jev reports complete · inspect the page",
-    blocked: "Stopped · no supported next action",
+    blocked: state.history?.at(-1)?.execution === "unknown"
+      ? "Stopped · inspect the interrupted action"
+      : "Stopped · no supported next action",
   };
   $("status").textContent = labels[state.status] || state.status;
   if (!page) {
@@ -128,7 +135,7 @@ function render() {
     ? state.history
         .map(
           (h) =>
-            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
+            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${h.execution === "unknown" ? "Execution unconfirmed · inspect before restarting" : h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
