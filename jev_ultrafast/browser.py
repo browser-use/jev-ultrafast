@@ -185,7 +185,12 @@ def browser_operation(request):
                     call("Input.insertText", text=request["text"])
         return {"executed": action["id"]}
 
-    info = evaluate(READ_STATE)
+    # The observe read, and only it, gets the DevTools command-line API so snapshot.js can
+    # call `getEventListeners`; every other read of READ_STATE reuses the set this one found.
+    result = call("Runtime.evaluate", expression=READ_STATE, returnByValue=True, includeCommandLineAPI=True)
+    if result.get("exceptionDetails"):
+        raise StalePage("Document changed during evaluation")
+    info = result.get("result", {}).get("value")
     if info is None:
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)

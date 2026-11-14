@@ -52,14 +52,53 @@
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
+  // A control whose only clickability is a listener attached by script leaves no trace in
+  // the DOM (jQuery tablesorter binds `.click()` on a bare `<th class="header">`), so the
+  // selector above never matches it. The observe read in browser.py evaluates this file with
+  // `includeCommandLineAPI`, which puts the DevTools `getEventListeners(el)` in scope: the
+  // same backend as CDP `DOMDebugger.getEventListeners`, in one round trip instead of one per
+  // node. Every other evaluation (the freshness marker) runs without it and reuses the set the
+  // last observe found, so the marker and the observation agree about which controls exist.
+  // Offered as a button: a visible, labelled, in-viewport element outside every indexed
+  // control, with a click/mouse/pointer listener on itself, no larger than a quarter of the
+  // viewport, and wrapping no indexed control (a card whose link is already offered is a
+  // wrapper, not a second control). When one hit contains another, the inner one is kept.
+  // Delegated listeners (bound on an ancestor and dispatched by selector) are not seen.
+  let listened=cache.listen || [];
+  if (typeof getEventListeners === 'function') {
+    const kinds=['click','mousedown','mouseup','pointerdown','pointerup'], found=[];
+    const quarter=innerWidth*innerHeight/4;
+    for (const e of document.body.querySelectorAll('*')) {
+      if (found.length>=60) break;
+      if (['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME','BR'].includes(e.tagName) ||
+          (e instanceof SVGElement && e.tagName.toLowerCase()!=='svg')) continue;
+      const r=e.getBoundingClientRect();
+      if (r.width<=0 || r.height<=0 || r.width*r.height>quarter) continue;
+      const cx=r.x+r.width/2, cy=r.y+r.height/2;
+      if (cx<0 || cy<0 || cx>=innerWidth || cy>=innerHeight) continue;
+      const l=getEventListeners(e);
+      if (!kinds.some(k=>l[k] && l[k].length)) continue;
+      if (e.closest(selector) || e.querySelector(selector) || !visible(e) || !name(e)) continue;
+      found.push(e);
+    }
+    listened=cache.listen=found.filter(e=>!found.some(o=>o!==e && e.contains(o)));
+  }
+  listened=listened.filter(e=>e.isConnected);
+  const listenedSet=new Set(listened), candidates=[...document.querySelectorAll(selector)];
+  if (listened.length) {
+    candidates.push(...listened);
+    candidates.sort((a,b)=>a===b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+  }
   const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
+  for (const e of candidates) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
-    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
+    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2,
+      rname=role(e) || (listenedSet.has(e) ? 'button' : null);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+    if (listenedSet.has(e)) base.listener=true;
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;
