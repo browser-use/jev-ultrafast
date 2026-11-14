@@ -3,6 +3,7 @@
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
+from jev_ultrafast.model import action_space
 
 HTML = """<!doctype html><title>Guard checks</title>
 <style>body{margin:30px}button{width:180px;height:50px}#outside{position:absolute;top:3000px}</style>
@@ -124,8 +125,55 @@ def main():
         assert value == "Generated", repr(value)
         assert any(a.get("role") == "option" for a in page["actions"])
         passed.append("real text input waits for asynchronous combobox suggestions")
+
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <form id="publication">
+            <button name="published" value="0">Save draft</button>
+            <button type="submit" name="published" value="1"><span>Publish now</span></button>
+            <button type="button" value="preview">Preview publication</button>
+            <button type="reset" value="reset">Reset publication</button>
+          </form>
+          <output id="saved">Nothing saved</output>
+          <input type="submit" value="Submit search">
+          <input type="button" value="Open search">
+          <input type="reset" value="Reset search">
+          <button type="button">Cancel</button>
+          <button type="button" value="">Back</button>
+          <label for="save-copy">Save a copy</label>
+          <button id="save-copy" type="button" value="copy">Save</button>
+          <button value="archive" aria-label="Archive publication">Archive</button>
+          <span id="delete-label">Delete publication</span>
+          <button value="delete" aria-labelledby="delete-label">Delete</button>
+        """))
+        browser.evaluate("document.querySelector('#publication').addEventListener('submit',event=>{"
+                         "event.preventDefault();"
+                         "window.submittedValue=new FormData(event.target,event.submitter).get('published');"
+                         "document.querySelector('#saved').textContent=window.submittedValue==='0'"
+                         "?'Draft saved':'Published';})")
+        page = browser.observe(screenshot=False)
+        assert {a["label"] for a in page["actions"] if a.get("role") == "button"} == {
+            "Save draft", "Publish now", "Preview publication", "Reset publication",
+            "Submit search", "Open search", "Reset search", "Cancel", "Back", "Save a copy",
+            "Archive publication", "Delete publication",
+        }, "Button labels must use their text while input button labels keep their values"
+        passed.append("button names preserve visible text, input values, and explicit ARIA labels")
+        for label, submitted, outcome in [("Save draft", "0", "Draft saved"), ("Publish now", "1", "Published")]:
+            page = browser.observe(screenshot=False)
+            elements, targets, _ = action_space(page["actions"])
+            element = next(e for e in elements if e["label"] == label)
+            action = targets["CLICK"][element["index"]]
+            browser.act(action, page)
+            assert browser.evaluate("window.submittedValue") == submitted
+            assert browser.evaluate("document.querySelector('#saved').textContent") == outcome
+        passed.append("named submit buttons retain their original form values after clicking by label")
+
+        page = browser.observe(screenshot=False)
+        action = next(a for a in page["actions"] if a["label"] == "Publish now")
+        assert browser.fresh(page)
+        assert browser.fresh(page, action)
         browser.call("Page.navigate", url="about:blank")
-        assert not browser.fresh(page, field)
+        assert not browser.fresh(page)
+        assert not browser.fresh(page, action)
         passed.append("navigation invalidates the old document")
     finally:
         browser.close()
