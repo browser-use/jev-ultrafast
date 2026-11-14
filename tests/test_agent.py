@@ -318,3 +318,16 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_model_call_budget_counts_predictions_and_stops(runner, monkeypatch):
+    from jev_ultrafast.questions import MAX_STEPS
+
+    choose = Mock(return_value={})
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.state["decisions"] = [{} for _ in range(MAX_STEPS * 2 - 1)]
+    runner.command("predict", {})
+    assert len(runner.state["decisions"]) == MAX_STEPS * 2
+    with pytest.raises(ValueError, match="model-call budget"):
+        runner.command("predict", {})
+    assert choose.call_count == 1
