@@ -318,3 +318,31 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def helper_says(monkeypatch, content):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", Mock(return_value={"choices": [{"message": {"content": content}}]}))
+
+
+def test_a_missing_value_is_reported_as_a_goal_problem(monkeypatch):
+    """TEXT_VALUE offers {"text": null} for exactly this, so it is not a bad response."""
+    helper_says(monkeypatch, '{"text":null}')
+    with pytest.raises(ValueError, match="goal supplies no value"):
+        model.field_text({"goal": "Find a flight"})
+
+
+@pytest.mark.parametrize("content", ["Thinking: Zurich", '{"text":123}', "[]", "7", '"text"'])
+def test_a_bad_reply_is_not_blamed_on_the_goal(monkeypatch, content):
+    helper_says(monkeypatch, content)
+    with pytest.raises(ValueError, match="nothing typed") as caught:
+        model.field_text({"goal": "Find a flight"})
+    assert "goal supplies no value" not in str(caught.value)
+
+
+def test_a_reply_with_no_choices_is_not_blamed_on_the_goal(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", Mock(return_value={"choices": []}))
+    with pytest.raises(ValueError, match="nothing typed") as caught:
+        model.field_text({"goal": "Find a flight"})
+    assert "goal supplies no value" not in str(caught.value)

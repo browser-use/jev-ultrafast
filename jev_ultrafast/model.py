@@ -186,11 +186,18 @@ def field_text(context):
     )
     try:
         output = json.loads(result["choices"][0]["message"]["content"])
-        value = output["text"]
-        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, IndexError):
         raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+    if not isinstance(output, dict) or set(output) != {"text"}:
+        raise ValueError("Text helper returned no valid field value; nothing typed.")
+    value = output["text"]
+    # TEXT_VALUE offers {"text": null} as the way to report that the goal carries no value for
+    # this field. Reporting that as a bad response sends the operator after the model, when the
+    # thing to correct is the goal.
+    if value is None:
+        raise ValueError("The goal supplies no value for this field; nothing typed.")
+    if not isinstance(value, str) or not value.strip() or len(value) > 2000:
+        raise ValueError("Text helper returned no valid field value; nothing typed.")
     return value, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),
