@@ -60,7 +60,7 @@ def test_invalid_choice_is_rejected(mutation):
         a["choice"] = "b"
     else:
         a["confidence"] = 5
-    with pytest.raises(ValueError, match="Invalid TypeSafe"):
+    with pytest.raises(ValueError, match="Invalid SemIf"):
         model.validate_choice(a, {"a", "b"})
 
 
@@ -74,42 +74,95 @@ def test_one_index_per_node_with_operation_specific_targets():
     assert "WAIT" in controls
 
 
-def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
+def test_semif_two_stage_decision_and_single_candidate_bypass(monkeypatch):
     calls = []
 
     def post(_url, _key, body):
         calls.append(body)
+        options = [opt["id"] for opt in body["options"]]
         return {
-            "model": "test",
-            "answers": {
-                "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
-                "type_text_target": choice(["1"], "1"),
-                "click_target": {"choice": "invented"},
-            },
+            "model": "semif-test",
+            "decision": "TYPE_TEXT",
+            "confidence": 0.99,
+            "probabilities": {opt: (0.99 if opt == "TYPE_TEXT" else 0.01 / (len(options) - 1)) for opt in options},
         }
 
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
     monkeypatch.setattr(model, "post_json", post)
     d = model.choose(page(), "Find a book", [])
+    # Since TYPE_TEXT has only 1 target ("1"), it bypasses second model call
     assert len(calls) == 1
     assert d["operation"] == "TYPE_TEXT" and d["target"] == "1" and d["choice"] == "e1"
-    assert set(calls[0]["questions"]) == {"operation", "click_target", "type_text_target"}
+    assert d["confidence"] == 0.99
+    # Provenance assertions
+    assert d["backend"] == "semif"
+    assert d["model"] == "semif-test"
+    # Combined decision uses model for operation and deterministic bypass for target -> mixed
+    assert d["decision_source"] == "mixed"
+    assert isinstance(d["question_spec_hash"], str) and len(d["question_spec_hash"]) == 16
+    assert d["provenance"]["stages"]["target"]["decision_source"] == "deterministic"
+    assert d["provenance"]["stages"]["target"]["model_version"] is None
+    assert d["provenance"]["stages"]["operation"]["decision_source"] == "model"
 
 
-def test_click_cannot_consume_a_text_target(monkeypatch):
+def test_semif_two_stage_decision_calls_second_stage_for_multiple_targets(monkeypatch):
+    calls = []
+
     def post(_url, _key, body):
+        calls.append(body)
+        options = [opt["id"] for opt in body["options"]]
+        if len(calls) == 1:
+            # Operation decision
+            return {
+                "model": "semif-test",
+                "version": "v1.0",
+                "decision": "CLICK",
+                "confidence": 0.95,
+                "probabilities": {opt: (0.95 if opt == "CLICK" else 0.05 / (len(options) - 1)) for opt in options},
+            }
+        else:
+            # Target decision (options: ["1", "2"])
+            return {
+                "model": {"name": "semif-test-target", "version": "v2.1"},
+                "decision": "2",
+                "confidence": 0.92,
+                "probabilities": {"1": 0.08, "2": 0.92},
+            }
+
+    monkeypatch.setattr(model, "post_json", post)
+    d = model.choose(page(), "Find a book", [])
+    assert len(calls) == 2
+    assert d["operation"] == "CLICK" and d["target"] == "2" and d["choice"] == "e3"
+    assert d["choice"] == "e3"
+    assert d["backend"] == "semif"
+    assert d["decision_source"] == "model"
+    assert d["provenance"]["stages"]["target"]["decision_source"] == "model"
+    assert d["provenance"]["stages"]["target"]["model"] == "semif-test-target"
+    assert d["provenance"]["stages"]["target"]["model_version"] == "v2.1"
+    assert d["provenance"]["stages"]["operation"]["model_version"] == "v1.0"
+
+
+def test_click_rejects_invalid_target_decision(monkeypatch):
+    calls = []
+
+    def post(_url, _key, body):
+        calls.append(body)
+        if len(calls) == 1:
+            options = [opt["id"] for opt in body["options"]]
+            return {
+                "model": "semif-test",
+                "decision": "CLICK",
+                "confidence": 1.0,
+                "probabilities": {opt: float(opt == "CLICK") for opt in options},
+            }
         return {
-            "model": "test",
-            "answers": {
-                "operation": choice(body["questions"]["operation"]["criteria"], "CLICK"),
-                "type_text_target": choice(["1"], "1"),
-                "click_target": choice(["1", "2", "999"], "999"),
-            },
+            "model": "semif-test",
+            "decision": "999",
+            "confidence": 1.0,
+            "probabilities": {"1": 0.0, "2": 0.0, "999": 1.0},
         }
 
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
     monkeypatch.setattr(model, "post_json", post)
-    with pytest.raises(ValueError, match="Invalid TypeSafe"):
+    with pytest.raises(ValueError, match="Invalid SemIf"):
         model.choose(page(), "Find a book", [])
 
 
@@ -119,22 +172,31 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
         "id": "toggle", "kind": "click", "label": "Free cancellation", "node": 30,
         "role": "checkbox", "checked": "true", "selected": False,
     })
+    calls = []
 
     def post(_url, _key, body):
-        questions = body["questions"]
-        target = questions["click_target"]
-        assert target["criteria"]["1"]["checked"] == "true"
-        assert target["criteria"]["1"]["selected"] is False
-        assert questions["operation"]["instructions"]["rules"] in target["instructions"]["rules"]
+        calls.append(body)
+        if len(calls) == 1:
+            options = [opt["id"] for opt in body["options"]]
+            return {
+                "model": "semif-test",
+                "decision": "CLICK",
+                "confidence": 1.0,
+                "probabilities": {opt: float(opt == "CLICK") for opt in options},
+            }
+        # Check target request body
+        target_state = body["state"]
+        first_elem = target_state["candidate_elements"][0]
+        assert first_elem["checked"] == "true"
+        assert first_elem["selected"] is False
+        assert "Rules:" in body["question"]
         return {
-            "model": "test",
-            "answers": {
-                "operation": choice(questions["operation"]["criteria"], "CLICK"),
-                "click_target": choice(target["criteria"], "3"),
-            },
+            "model": "semif-test",
+            "decision": "3",
+            "confidence": 1.0,
+            "probabilities": {"1": 0.0, "2": 0.0, "3": 1.0},
         }
 
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
     monkeypatch.setattr(model, "post_json", post)
     d = model.choose(p, "Search with free cancellation", [])
     assert d["choice"] == "e3"
@@ -318,3 +380,110 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_mcp_neutral_tool_names_and_provenance(monkeypatch):
+    import scripts.jev_mcp as mcp
+
+    # 1. tools/list exposes neutral tool names
+    list_res = mcp.handle_request({"method": "tools/list", "id": 1})
+    tool_names = [t["name"] for t in list_res["result"]["tools"]]
+    assert "open_browse" in tool_names
+    assert "open_decide" in tool_names
+    assert "jev_browse" in tool_names
+    assert "jev_decide" in tool_names
+
+    # Mock model.post_json for decide
+    def post(_url, _key, body):
+        options = [opt["id"] for opt in body["options"]]
+        return {
+            "model": "semif-local-test",
+            "decision": "TYPE_TEXT",
+            "confidence": 0.99,
+            "probabilities": {opt: (0.99 if opt == "TYPE_TEXT" else 0.01 / (len(options) - 1)) for opt in options},
+        }
+
+    monkeypatch.setattr(model, "post_json", post)
+
+    # 2. Call via neutral tool name open_decide
+    decide_call = {
+        "method": "tools/call",
+        "id": 2,
+        "params": {
+            "name": "open_decide",
+            "arguments": {"page": page(), "goal": "Find a book"},
+        },
+    }
+    resp = mcp.handle_request(decide_call)
+    assert "result" in resp and not resp["result"].get("isError")
+    content = json.loads(resp["result"]["content"][0]["text"])
+    assert content["backend"] == "semif"
+    assert content["model"] == "semif-local-test"
+    assert content["decision_source"] == "mixed"
+    assert content["provenance"]["stages"]["target"]["decision_source"] == "deterministic"
+    assert "question_spec_hash" in content
+    assert content["calibration_surface"] == "semif_local"
+
+    # 3. Call via backwards-compatible name jev_decide
+    decide_call_legacy = {
+        "method": "tools/call",
+        "id": 3,
+        "params": {
+            "name": "jev_decide",
+            "arguments": {"page": page(), "goal": "Find a book"},
+        },
+    }
+    resp_legacy = mcp.handle_request(decide_call_legacy)
+    assert "result" in resp_legacy and not resp_legacy["result"].get("isError")
+    content_legacy = json.loads(resp_legacy["result"]["content"][0]["text"])
+    assert content_legacy["backend"] == "semif"
+
+
+def test_mcp_browse_provenance_and_decision_source(monkeypatch):
+    import scripts.jev_mcp as mcp
+
+    # Mock Agent in scripts.jev_mcp
+    class FakeAgent:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def run(self):
+            yield {
+                "status": "done",
+                "elapsed_ms": 120,
+                "page": {"url": "https://example.test", "title": "Done", "text": "OK"},
+                "history": [
+                    {
+                        "step": 1,
+                        "action": "Search",
+                        "operation": "TYPE_TEXT",
+                        "choice": "e1",
+                        "text": "test",
+                        "confidence": 0.99,
+                        "elapsed_ms": 120,
+                        "backend": "semif",
+                        "model": "semif-model",
+                        "question_spec_hash": "abcd1234ef567890",
+                        "decision_source": "deterministic",
+                        "provenance": {"backend": "semif", "decision_source": "deterministic"},
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(mcp, "Agent", FakeAgent)
+
+    res = mcp.execute_browse("https://example.test", "Do something", max_steps=5)
+    assert res["status"] == "done"
+    assert res["backend"] == "semif"
+    assert res["calibration_surface"] == "semif_local"
+    assert res["provenance"]["backend"] == "semif"
+    assert len(res["history"]) == 1
+    assert res["history"][0]["backend"] == "semif"
+    assert res["history"][0]["decision_source"] == "deterministic"
+    assert res["history"][0]["question_spec_hash"] == "abcd1234ef567890"
