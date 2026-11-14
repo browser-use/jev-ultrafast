@@ -5,6 +5,7 @@ import time
 from copy import deepcopy
 from unittest.mock import Mock
 
+import httpx
 import pytest
 
 from jev_ultrafast import agent as loop
@@ -155,6 +156,316 @@ def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
         model.field_text({"goal": 'Enter "Zurich"'})
+
+
+@pytest.fixture
+def text_http(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://gateway.test/custom/v1")
+    monkeypatch.setenv("TEXT_MODEL", "test-model")
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
+    monkeypatch.setattr(model, "REASONING_CONTROLS", {})
+    monkeypatch.setattr(model, "TOKEN_LIMITS", {})
+    monkeypatch.setattr(model.time, "sleep", lambda _: None)
+    calls = []
+    replies = []
+
+    def handle(request):
+        calls.append((str(request.url), json.loads(request.content)))
+        assert replies, "Unexpected HTTP attempt"
+        status, body = replies.pop(0)
+        if isinstance(body, str):
+            return httpx.Response(status, text=body)
+        return httpx.Response(status, json=body)
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        monkeypatch.setattr(model, "CLIENT", client)
+        yield calls, replies
+    assert not replies, "Expected HTTP attempts were not made"
+
+
+def text_reply():
+    return 200, {"choices": [{"message": {"content": '{"text":"Zurich"}'}}]}
+
+
+def rejection(field, status=400):
+    return status, {"error": {"param": field, "code": "unknown_parameter", "message": "Rejected"}}
+
+
+@pytest.mark.parametrize("accepted", range(4))
+def test_reasoning_fallback_and_cached_control(text_http, accepted):
+    calls, replies = text_http
+    expected = [
+        {"reasoning": {"enabled": False}},
+        {"reasoning_effort": "none"},
+        {"thinking": {"type": "disabled"}},
+        {},
+    ]
+    replies.extend(rejection(next(iter(control))) for control in expected[:accepted])
+    replies.extend([text_reply(), text_reply()])
+    if accepted == 3:
+        with pytest.warns(RuntimeWarning, match="Provider defaults apply"):
+            value, info = model.field_text({"goal": "Fly to Zurich"})
+        with pytest.warns(RuntimeWarning, match="Provider defaults apply"):
+            model.field_text({"goal": "Fly to London"})
+    else:
+        value, info = model.field_text({"goal": "Fly to Zurich"})
+        model.field_text({"goal": "Fly to London"})
+    assert value == "Zurich"
+    assert info["reasoning_attempts"] == accepted + 1
+    assert info["reasoning_control"] == expected[accepted]
+    assert len(calls) == accepted + 2
+    for (_, body), control in zip(calls, [*expected[:accepted + 1], expected[accepted]], strict=True):
+        assert {key: body[key] for key in ("reasoning", "reasoning_effort", "thinking") if key in body} == control
+        assert body["response_format"] == {"type": "json_object"}
+        assert body["max_tokens"] == 1024
+    initial = {k: v for k, v in calls[0][1].items() if k != "reasoning"}
+    for _, body in calls[:accepted + 1]:
+        assert {k: v for k, v in body.items() if k not in {"reasoning", "reasoning_effort", "thinking"}} == initial
+
+
+@pytest.mark.parametrize("setting", [None, "low", "medium", "high"])
+def test_effort_fallback_preserves_setting(text_http, monkeypatch, setting):
+    calls, replies = text_http
+    if setting is None:
+        monkeypatch.delenv("TEXT_MODEL_REASONING")
+    else:
+        monkeypatch.setenv("TEXT_MODEL_REASONING", setting)
+    replies.extend([rejection("reasoning"), rejection("reasoning_effort"), text_reply()])
+    with pytest.warns(RuntimeWarning, match=f"reasoning={setting or 'low'}"):
+        model.field_text({})
+    assert calls[0][1]["reasoning"] == {"effort": setting or "low"}
+    assert calls[1][1]["reasoning_effort"] == (setting or "low")
+    assert all("thinking" not in body for _, body in calls)
+    assert not {"reasoning", "reasoning_effort", "thinking"} & calls[2][1].keys()
+
+
+@pytest.mark.parametrize("detail", [
+    {"message": "Unknown parameter: 'reasoning'."},
+    {"message": "Unsupported value: 'reasoning.enabled' does not support false."},
+    {"message": "'reasoning' is not supported with this model."},
+    {"param": "reasoning.enabled", "code": "unsupported_value"},
+    # With null param/code, the rejection wording must identify the current field.
+    {"message": "Unrecognized request argument supplied: reasoning", "param": None, "code": None},
+])
+def test_reasoning_validation_errors_allow_fallback(text_http, detail):
+    calls, replies = text_http
+    replies.extend([(422, {"error": detail}), text_reply()])
+    model.field_text({})
+    assert len(calls) == 2
+    assert calls[1][1]["reasoning_effort"] == "none"
+
+
+def test_request_argument_rejections_reach_omission_and_cache_it(text_http):
+    calls, replies = text_http
+    for field in ("reasoning", "reasoning_effort", "thinking"):
+        replies.append((400, {"error": {
+            "message": f"Unrecognized request argument supplied: {field}",
+            "param": None,
+            "code": None,
+        }}))
+    replies.extend([text_reply(), text_reply()])
+    with pytest.warns(RuntimeWarning, match="Provider defaults apply"):
+        value, info = model.field_text({})
+    assert value == "Zurich" and info["reasoning_attempts"] == 4
+    with pytest.warns(RuntimeWarning, match="Provider defaults apply"):
+        value, cached = model.field_text({})
+    assert value == "Zurich" and cached["reasoning_attempts"] == 1
+    fields = {"reasoning", "reasoning_effort", "thinking"}
+    assert [fields & body.keys() for _, body in calls] == [
+        {"reasoning"}, {"reasoning_effort"}, {"thinking"}, set(), set(),
+    ]
+
+
+@pytest.mark.parametrize("message", [
+    "Unknown parameter nonreasoning",
+    "Unrecognized request argument supplied: nonreasoning",
+    "Unrecognized request argument supplied: reasoning_effort",
+])
+def test_rejection_message_cannot_swallow_another_field(text_http, message):
+    calls, replies = text_http
+    replies.append((400, {"error": {"message": message, "param": None, "code": None}}))
+    with pytest.raises(model.ModelHTTPError):
+        model.field_text({})
+    assert len(calls) == 1
+    assert not model.REASONING_CONTROLS
+
+
+@pytest.mark.parametrize("status,body", [
+    (401, {"error": {"message": "Unknown parameter: 'reasoning'."}}),
+    (403, {"error": {"param": "reasoning", "code": "unsupported_parameter"}}),
+    (404, {"error": {"code": "model_not_found"}}),
+    (400, {"error": {"param": "max_tokens", "message": "Unknown parameter: 'reasoning'."}}),
+    (400, {"error": {"message": "max_tokens is too small for reasoning"}}),
+    (400, {"error": {"message": "Unknown parameter: 'reasoning_content'."}}),
+    (400, {"error": {"message": "Context length exceeded", "code": "context_length_exceeded"}}),
+    (400, {"error": {"param": "reasoning", "message": "Internal processing failed"}}),
+    (400, {"error": {"message": None}}),
+    (400, {"error": "Invalid request"}),
+    (400, []),
+    (400, "<html>Bad request</html>"),
+    (500, {"error": {"param": "reasoning", "code": "unknown_parameter"}}),
+])
+def test_unrelated_or_ambiguous_errors_do_not_negotiate(text_http, status, body):
+    calls, replies = text_http
+    replies.append((status, body))
+    with pytest.raises(model.ModelHTTPError) as error:
+        model.field_text({})
+    assert error.value.status == status
+    assert len(calls) == 1
+    assert not model.REASONING_CONTROLS
+
+
+@pytest.mark.parametrize("status", [429, 503, 529])
+def test_transient_retries_do_not_change_reasoning(text_http, status):
+    calls, replies = text_http
+    replies.extend([rejection("reasoning", status)] * 3)
+    with pytest.raises(model.ModelHTTPError):
+        model.field_text({})
+    assert len(calls) == 3
+    assert calls[0] == calls[1] == calls[2]
+
+
+@pytest.mark.parametrize("name,value", [
+    ("TEXT_MODEL_BASE_URL", "https://another.test/proxy"),
+    ("TEXT_MODEL", "another-model"),
+    ("TEXT_MODEL_REASONING", "high"),
+])
+def test_reasoning_cache_isolated_by_configuration(text_http, monkeypatch, name, value):
+    calls, replies = text_http
+    replies.extend([rejection("reasoning"), text_reply(), text_reply()])
+    model.field_text({})
+    monkeypatch.setenv(name, value)
+    model.field_text({})
+    assert len(calls) == 3
+    assert calls[-1][1]["reasoning"] == ({"effort": "high"} if name == "TEXT_MODEL_REASONING" else {"enabled": False})
+
+
+def test_cached_control_can_be_rejected_later(text_http):
+    calls, replies = text_http
+    replies.extend([rejection("reasoning"), text_reply(), rejection("reasoning_effort"), text_reply()])
+    model.field_text({})
+    model.field_text({})
+    assert len(calls) == 4
+    assert calls[-1][1]["thinking"] == {"type": "disabled"}
+
+
+def test_omission_failure_propagates(text_http):
+    calls, replies = text_http
+    replies.extend(rejection(field) for field in ("reasoning", "reasoning_effort", "thinking", "temperature"))
+    with pytest.warns(RuntimeWarning, match="omitting the control"):
+        with pytest.raises(model.ModelHTTPError):
+            model.field_text({})
+    assert len(calls) == 4
+    assert not model.REASONING_CONTROLS
+
+
+def test_message_naming_the_cap_negotiates_the_cap_not_reasoning(text_http):
+    # "Invalid parameter max_tokens for reasoning" names the cap, so the cap is what moves;
+    # the reasoning control must survive untouched.
+    calls, replies = text_http
+    replies.extend([
+        (400, {"error": {"message": "Invalid parameter max_tokens for reasoning", "param": None, "code": None}}),
+        text_reply(),
+    ])
+    value, info = model.field_text({})
+    assert value == "Zurich" and info["token_limit"] == "max_completion_tokens"
+    assert info["reasoning_attempts"] == 1 and info["reasoning_control"] == {"reasoning": {"enabled": False}}
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("body,expected", [
+    # A provider may put a non-string in code, or name the field unquoted at the end of a
+    # sentence. Neither may crash, and the sentence period is not part of the field path.
+    ({"error": {"param": "reasoning", "code": ["unknown_parameter"]}}, False),
+    ({"error": {"param": "reasoning", "code": {"kind": "unknown_parameter"}}}, False),
+    ({"error": {"message": "Unknown parameter: reasoning.", "param": None, "code": None}}, True),
+    ({"error": {"message": "Unknown parameter: reasoning_content.", "param": None, "code": None}}, False),
+])
+def test_malformed_or_unquoted_rejections(text_http, body, expected):
+    calls, replies = text_http
+    replies.append((400, body))
+    if expected:
+        replies.append(text_reply())
+        assert model.field_text({})[0] == "Zurich"
+        assert len(calls) == 2
+    else:
+        with pytest.raises(model.ModelHTTPError):
+            model.field_text({})
+        assert len(calls) == 1
+
+
+def test_output_cap_negotiates_independently_of_reasoning(text_http):
+    # PIN: gpt-5.6-luna rejects max_tokens and requires max_completion_tokens, observed live
+    # 2026-09-18; the cap must negotiate without spending a reasoning fallback step.
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply()])
+    value, info = model.field_text({})
+    assert value == "Zurich" and info["token_limit"] == "max_completion_tokens"
+    assert info["reasoning_attempts"] == 1 and info["reasoning_control"] == {"reasoning": {"enabled": False}}
+    assert "max_tokens" not in calls[-1][1] and calls[-1][1]["max_completion_tokens"] == 1024
+    assert calls[0][1]["max_tokens"] == 1024
+
+
+def test_accepted_cap_is_reused_within_an_endpoint_and_model(text_http):
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply(), text_reply()])
+    model.field_text({})
+    model.field_text({})
+    assert len(calls) == 3
+    assert "max_tokens" not in calls[-1][1] and calls[-1][1]["max_completion_tokens"] == 1024
+
+
+@pytest.mark.parametrize("name,value", [
+    ("TEXT_MODEL", "other-model"),
+    ("TEXT_MODEL_BASE_URL", "https://gateway.test/other/v1"),
+])
+def test_cap_cache_isolated_by_configuration(text_http, monkeypatch, name, value):
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply(), rejection("max_tokens"), text_reply()])
+    model.field_text({})
+    monkeypatch.setenv(name, value)
+    model.field_text({})
+    assert len(calls) == 4
+    assert "max_tokens" in calls[2][1], "a different endpoint or model must start from the first spelling"
+
+
+def test_cached_cap_falls_back_when_it_starts_being_rejected(text_http):
+    # The accepted spelling can stop working (gateway swap, model alias moved); the other
+    # spelling must still be tried before the error propagates.
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), text_reply(),
+                    rejection("max_completion_tokens"), text_reply()])
+    model.field_text({})
+    value, info = model.field_text({})
+    assert value == "Zurich" and info["token_limit"] == "max_tokens"
+    assert [("max_completion_tokens" in body) for _, body in calls] == [False, True, True, False]
+
+
+def test_both_cap_spellings_rejected_propagates(text_http):
+    calls, replies = text_http
+    replies.extend([rejection("max_tokens"), rejection("max_completion_tokens")])
+    with pytest.raises(model.ModelHTTPError):
+        model.field_text({})
+    assert len(calls) == 2
+    assert not model.TOKEN_LIMITS and not model.REASONING_CONTROLS
+
+
+def test_invalid_json_output_does_not_negotiate_or_cache(text_http):
+    calls, replies = text_http
+    replies.extend([rejection("reasoning"), (200, {"choices": [{"message": {"content": "not JSON"}}]})])
+    with pytest.raises(ValueError, match="nothing typed"):
+        model.field_text({})
+    assert len(calls) == 2
+    assert not model.REASONING_CONTROLS
+
+
+def test_unknown_reasoning_setting_fails_before_the_request(text_http, monkeypatch):
+    calls, _ = text_http
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "disabled")
+    with pytest.raises(ValueError, match="TEXT_MODEL_REASONING"):
+        model.field_text({})
+    assert not calls
 
 
 @pytest.fixture
