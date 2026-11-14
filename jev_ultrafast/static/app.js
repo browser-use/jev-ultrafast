@@ -87,13 +87,19 @@ function render() {
     blocked: "Stopped · no supported next action",
   };
   $("status").textContent = labels[state.status] || state.status;
+  $("empty").hidden = Boolean(page);
+  $("screenshot-notice").hidden = !page || Boolean(page.screenshot);
+  $("screenshot-notice").textContent = page && !page.screenshot
+    ? page.screenshot_error || "Screenshot unavailable; page data is available."
+    : "";
+  $("screenshot").hidden = !page?.screenshot;
+  if (page?.screenshot) $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
+  else $("screenshot").removeAttribute("src");
   if (!page) {
+    $("targets").hidden = true;
     controls();
     return;
   }
-  $("empty").hidden = true;
-  $("screenshot").hidden = false;
-  $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
   $("action-count").textContent = `${state.elements.length} elements`;
@@ -123,7 +129,7 @@ function render() {
     const index=String(i+1);
     return `<div class="target ${index === selectedIndex ? 'selected' : ''}" data-action="${index}" style="left:${100*a.rect.x/page.w}%;top:${100*a.rect.y/page.h}%;width:${100*a.rect.w/page.w}%;height:${100*a.rect.h/page.h}%"><span>${index}</span></div>`;
   }).join('');
-  $("targets").hidden = !$("overlays").checked;
+  $("targets").hidden = !page.screenshot || !$("overlays").checked;
   $("history").innerHTML = state.history.length
     ? state.history
         .map(
@@ -191,7 +197,7 @@ $("stop").addEventListener("click", () => {
   controls();
 });
 $("overlays").addEventListener("change", () => {
-  $("targets").hidden = !$("overlays").checked;
+  $("targets").hidden = !state?.page?.screenshot || !$("overlays").checked;
 });
 $("choices").addEventListener("pointerover", (event) => {
   const id = event.target.closest("[data-action]")?.dataset.action;

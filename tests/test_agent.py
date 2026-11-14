@@ -318,3 +318,79 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_screenshot_timeout_preserves_page_without_retrying_input(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    cdp = Mock(side_effect=[
+        {"result": {"value": page()}},
+        TimeoutError("Page.captureScreenshot timed out after 5s waiting for the daemon"),
+    ])
+    monkeypatch.setattr(browser, "cdp", cdp)
+    actual = browser_operation({"operation": "observe", "session": "test", "screenshot": True})
+    assert actual["actions"] == page()["actions"]
+    assert actual["fingerprint"] == fingerprint(page())
+    assert actual.get("screenshot") is None
+    assert actual["screenshot_error"] == "Screenshot timed out; page data is available."
+    assert [call.args[0] for call in cdp.call_args_list] == ["Runtime.evaluate", "Page.captureScreenshot"]
+    from browser_harness.helpers import SCREENSHOT_IPC_RESPONSE_TIMEOUT_SECONDS
+    assert cdp.call_args_list[1].kwargs["_response_timeout"] == SCREENSHOT_IPC_RESPONSE_TIMEOUT_SECONDS
+    assert "_response_timeout" not in cdp.call_args_list[0].kwargs
+
+
+def test_page_read_timeout_is_not_treated_as_missing_screenshot(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    monkeypatch.setattr(browser, "cdp", Mock(side_effect=TimeoutError("Page read timed out")))
+    with pytest.raises(TimeoutError, match="Page read timed out"):
+        browser_operation({"operation": "observe", "session": "test", "screenshot": True})
+
+
+def test_recording_can_start_without_a_screenshot(monkeypatch, tmp_path):
+    browser = Mock(observe=Mock(return_value={**page(), "screenshot_error": "Timed out"}))
+    monkeypatch.setattr(loop, "Browser", Mock(return_value=browser))
+    agent = loop.Agent("https://example.test", "Find a book", record_dir=tmp_path)
+    assert agent.state["status"] == "ready"
+    assert not list(tmp_path.glob("*.jpg"))
+    browser.act.assert_not_called()
+
+
+def test_recording_keeps_executed_action_without_a_screenshot(runner, tmp_path):
+    runner.record_dir = tmp_path
+    runner.state["record"] = True
+    runner.state["decision"] = decision("e3")
+    runner.state["browser"].observe.return_value = {**page(), "screenshot_error": "Timed out"}
+    result = runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert result["status"] == "ready"
+    assert len(result["history"]) == 1
+    runner.state["browser"].act.assert_called_once()
+    assert not list(tmp_path.glob("*.jpg"))
+
+
+def test_recording_rejects_old_frames_without_deleting_them(monkeypatch, tmp_path):
+    old = tmp_path / "000000.jpg"
+    old.write_bytes(b"old frame")
+    factory = Mock()
+    monkeypatch.setattr(loop, "Browser", factory)
+    with pytest.raises(ValueError, match="already contains recording frames"):
+        loop.Agent("https://example.test", "Find a book", record_dir=tmp_path)
+    factory.assert_not_called()
+    assert old.read_bytes() == b"old frame"
+
+
+def test_demo_recordings_use_distinct_directories(monkeypatch, tmp_path):
+    from jev_ultrafast import demo
+
+    monkeypatch.chdir(tmp_path)
+    factory = Mock()
+    factory.return_value.state = {}
+    factory.return_value.snapshot.return_value = {}
+    monkeypatch.setattr(demo, "Agent", factory)
+    monkeypatch.setattr(demo, "AGENT", None)
+    demo.command("reset", {"goal": "Find a book", "scenario": "research", "record": True})
+    first = factory.call_args.kwargs["record_dir"]
+    demo.command("reset", {"goal": "Find a book", "scenario": "research", "record": True})
+    second = factory.call_args.kwargs["record_dir"]
+    assert first != second
+    assert first.parent == second.parent == tmp_path / "artifacts" / "frames"

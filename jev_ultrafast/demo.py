@@ -8,6 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from .agent import Agent
 from .questions import MAX_STEPS
@@ -57,7 +58,7 @@ def command(name, body):
             else f"{ORIGIN}/fixture.html?scenario={scenario}",
             goal,
             screenshots=True,
-            record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,
+            record_dir=Path.cwd() / "artifacts" / "frames" / uuid4().hex if body.get("record") else None,
         )
         AGENT.state["scenario"] = scenario
     else:

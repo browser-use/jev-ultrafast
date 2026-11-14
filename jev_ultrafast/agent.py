@@ -16,8 +16,10 @@ class Agent:
             raise ValueError("Supply a task")
         plan = [task]
         self.pending_text = None
-        self.browser = Browser(url)
         self.record_dir = Path(record_dir) if record_dir else None
+        if self.record_dir and any(self.record_dir.glob("*.jpg")):
+            raise ValueError("record_dir already contains recording frames; use a fresh directory")
+        self.browser = Browser(url)
         self.screenshots = screenshots or bool(record_dir)
         try:
             page = self.browser.observe(screenshot=self.screenshots)
@@ -41,7 +43,8 @@ class Agent:
         )
         if self.record_dir:
             self.record_dir.mkdir(parents=True, exist_ok=True)
-            (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
+            if page.get("screenshot"):
+                (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
 
     def snapshot(self):
         return {
@@ -146,7 +149,7 @@ class Agent:
                 url=state["page"]["url"],
                 elapsed_ms=state["elapsed_ms"],
             )
-            if state["record"]:
+            if state["record"] and state["page"].get("screenshot"):
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )

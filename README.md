@@ -111,6 +111,12 @@ uv run --env-file .env python examples/run.py \
 
 Every executed target is resolved from an observed node. The executor rechecks page freshness and click occlusion. Model output never becomes selectors, coordinates, shell commands, or executable JavaScript. Text-helper output must parse as a small JSON object before typing.
 
+Optional screenshots use Browser Harness's screenshot-specific 60-second response timeout. If capture still
+times out, the inspector reports missing media and continues with the DOM observation; other browser errors
+still propagate. This does not cancel an in-flight daemon request or guarantee faster screenshots.
+Inspector recordings use separate `artifacts/frames/<run-id>/` directories. Library callers must provide a
+recording directory without existing JPEG frames; old recordings are never deleted or silently reused.
+
 ## Small enough to read
 
 | File | Job |
