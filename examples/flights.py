@@ -7,12 +7,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from jev_ultrafast import Agent
+from jev_ultrafast.flight_date import flight_departure
 
 URL = "https://www.google.com/travel/flights?hl=en"
-GOALS = (
-    "Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. "
-    "Stop when matching flight options are visible. Do not select or book a flight."
-)
+DEPARTURE = flight_departure()
+GOALS = DEPARTURE.goal_text
 
 
 def verify(page):
@@ -20,7 +19,7 @@ def verify(page):
     parsed = urlparse(page["url"])
     encoded = parse_qs(parsed.query).get("tfs", [""])[0]
     try:
-        date_in_url = b"2026-09-20" in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        date_in_url = DEPARTURE.iso.encode() in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
     except ValueError:
         date_in_url = False
     actions = page["actions"]
@@ -31,9 +30,9 @@ def verify(page):
         "one_way": values.get("Change ticket type. One way") == "One way",
         "origin": values.get("Where from?") == "Zürich",
         "destination": values.get("Where to?") == "London",
-        "date": values.get("Departure") == "Sun, Sep 20",
-        "year": date_in_url or "departing 2026-09-20" in page["text"],
-        "results": bool(flights) and all("Sunday, September 20" in f for f in flights),
+        "date": values.get("Departure") == DEPARTURE.short_weekday,
+        "year": date_in_url or f"departing {DEPARTURE.iso}" in page["text"],
+        "results": bool(flights) and all(DEPARTURE.long_weekday in f for f in flights),
     }
     return {"passed": all(checks.values()), "checks": checks, "visible_flights": flights}
 

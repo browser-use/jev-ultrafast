@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .agent import Agent
+from .flight_date import flight_departure
 from .questions import MAX_STEPS
 
 ROOT = Path(__file__).parent
@@ -98,7 +99,12 @@ class Handler(BaseHTTPRequestHandler):
         if path not in files:
             return self.send(404, "Not found", "text/plain")
         name, mime = files[path]
-        content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
+        content = (
+            (ROOT / "static" / name)
+            .read_text()
+            .replace("__TOKEN__", TOKEN)
+            .replace("__FLIGHTS_GOAL__", flight_departure().goal_text)
+        )
         self.send(200, content, mime + "; charset=utf-8")
 
     def do_POST(self):
