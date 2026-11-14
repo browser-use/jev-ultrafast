@@ -23,7 +23,13 @@ def post_json(url, key, body):
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            # A proxy or captive portal answering 200 with HTML parses as a ValueError, which
+            # the demo reports as a plain 400. Without this the caller is shown a parser
+            # message that says nothing about whether the browser was touched.
+            raise RuntimeError("Model provider returned a non-JSON response; no action executed.") from None
     raise RuntimeError("Model unavailable")
 
 
@@ -117,14 +123,19 @@ def choose(state, goal, history):
     }
     started = time.perf_counter()
     result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
-    operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
+    # A reply can be valid JSON without being an envelope at all: a bare array, string or
+    # null answers .get with an AttributeError, which is not what the caller is told to expect.
+    if not isinstance(result, dict) or not isinstance(result.get("answers"), dict) or "model" not in result:
+        raise ValueError("Invalid TypeSafe response; no action executed.")
+    answers = result["answers"]
+    operation_answer = validate_choice(answers.get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
     target_answer = None
     probabilities = {}
     if operation in targets:
         # Unused target heads cannot cause an action. Validate the head selected by the operation.
-        target_answer = validate_choice(result["answers"].get(operation.lower() + "_target", {}), targets[operation])
+        target_answer = validate_choice(answers.get(operation.lower() + "_target", {}), targets[operation])
         target = target_answer["choice"]
         choice = targets[operation][target]["id"]
         probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
@@ -140,7 +151,7 @@ def choose(state, goal, history):
         "operation_probabilities": operation_answer["probabilities"],
         "target_probabilities": target_answer["probabilities"] if target_answer else {},
         "target_confidence": target_answer["confidence"] if target_answer else None,
-        "raw_answers": result["answers"],
+        "raw_answers": answers,
         "model": result["model"],
         "usage": result.get("usage", {}),
         "latency_ms": round((time.perf_counter() - started) * 1000),
@@ -189,7 +200,7 @@ def field_text(context):
         value = output["text"]
         if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
             raise ValueError()
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, IndexError):
         raise ValueError("Text helper returned no valid field value; nothing typed.") from None
     return value, {
         "model": model,
