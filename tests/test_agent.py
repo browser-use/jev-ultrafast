@@ -186,8 +186,9 @@ def test_stale_decision_is_consumed_before_any_mutation(runner):
     assert runner.state["decision"] is None
 
 
-def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypatch):
-    helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
+@pytest.mark.parametrize("text", ["book", ""])
+def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypatch, text):
+    helper = Mock(return_value=(text, {"model": "test", "latency_ms": 10}))
     monkeypatch.setattr(loop, "field_text", helper)
     runner.state["browser"].act.side_effect = [StalePage("Changed before input"), None]
     with pytest.raises(StalePage):
@@ -197,6 +198,26 @@ def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypa
     assert helper.call_count == 1
     assert runner.state["browser"].act.call_count == 2  # The first call rejects before any browser input.
     assert runner.pending_text is None
+
+
+@pytest.mark.parametrize("text", ["", "   ", "London", "  London  "])
+def test_generated_text_reaches_execution_and_history_unchanged(runner, monkeypatch, text):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": [{"message": {"content": json.dumps({"text": text})}}]})
+    monkeypatch.setattr(model, "post_json", post)
+    p = runner.state["page"]
+    for action in p["actions"]:
+        if action.get("node") == 10:
+            action["value"] = "Paris"
+    p["fingerprint"] = fingerprint(p)
+
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+
+    runner.state["browser"].act.assert_called_once_with(p["actions"][0], p, text=text)
+    assert runner.state["history"][-1]["text"] == text
+    assert runner.state["text_calls"][-1]["value"] == text
+    assert runner.pending_text is None
+    assert post.call_count == 1
 
 
 def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch):
@@ -303,13 +324,18 @@ def test_flight_verification_rejects_wrong_trip(changed):
 
 
 @pytest.mark.parametrize(
-    "content", ["Thinking: Zurich", '{"text":null}', '{"text":"Zurich","extra":true}', '{"text":123}']
+    "content", [
+        "Thinking: Zurich", '{"text":null}', '{"text":"Zurich","extra":true}', '{"text":123}',
+        '{"text":false}', '{"text":0}', '{}', json.dumps({"text": "a" * 2001}),
+    ]
 )
-def test_text_helper_rejects_invalid_values(monkeypatch, content):
+def test_text_helper_rejects_invalid_values(runner, monkeypatch, content):
     monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
     monkeypatch.setattr(model, "post_json", Mock(return_value={"choices": [{"message": {"content": content}}]}))
     with pytest.raises(ValueError, match="nothing typed"):
-        model.field_text({"goal": "Find a flight"})
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    runner.state["browser"].act.assert_not_called()
+    assert not runner.state["history"]
 
 
 def test_navigation_during_prediction_reobserves_without_action(runner):

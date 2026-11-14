@@ -1,7 +1,10 @@
-"""Local-browser freshness/execution regressions. No model calls or external websites."""
+"""Local-browser freshness/execution regressions. No live model calls or external websites."""
 
+import json
+from unittest.mock import patch
 from urllib.parse import quote
 
+from jev_ultrafast import Agent, model
 from jev_ultrafast.browser import Browser, StalePage
 
 HTML = """<!doctype html><title>Guard checks</title>
@@ -124,13 +127,71 @@ def main():
         assert value == "Generated", repr(value)
         assert any(a.get("role") == "option" for a in page["actions"])
         passed.append("real text input waits for asynchronous combobox suggestions")
+
+        assert browser.fresh(page, field)
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")
     finally:
         browser.close()
+
+    filter_html = """<!doctype html><title>Destination filter</title>
+      <label>Destination<input id="destination" type="search" value="Lisbon"></label>
+      <p id="results">Showing stays in Lisbon</p>
+      <script>
+        window.typedValues=[];
+        document.querySelector('#destination').addEventListener('input',event=>{
+          window.typedValues.push(event.target.value);
+          document.querySelector('#results').textContent=event.target.value
+            ? 'Showing stays in '+event.target.value : 'Showing stays in all destinations';
+        });
+      </script>"""
+    outcome = """({value:document.querySelector('#destination').value,
+      inputs:window.typedValues, results:document.querySelector('#results').textContent})"""
+    for goal, text in [
+        ("Clear the Destination filter to show all destinations.", ""),
+        ("Show stays in London.", "London"),
+        ("Show stays in my preferred destination.", None),
+    ]:
+        def provider(_url, _key, body):
+            if "questions" in body:
+                questions = body["questions"]
+                selected = {
+                    "operation": "TYPE_TEXT",
+                    "type_text_target": next(iter(questions["type_text_target"]["criteria"])),
+                }
+                return {"model": "offline-test", "answers": {
+                    name: {"choice": choice, "confidence": 1.0,
+                           "probabilities": {key: float(key == choice) for key in questions[name]["criteria"]}}
+                    for name, choice in selected.items()
+                }}
+            return {"choices": [{"message": {"content": json.dumps({"text": text})}}]}
+
+        with patch.dict("os.environ", {"TYPESAFE_API_KEY": "offline-test", "TEXT_MODEL_API_KEY": "offline-test"}), \
+                patch.object(model, "post_json", side_effect=provider), \
+                Agent("data:text/html," + quote(filter_html), goal) as agent:
+            before = agent.browser.evaluate(outcome)
+            if text is None:
+                try:
+                    agent.command("tick")
+                except ValueError as error:
+                    assert "nothing typed" in str(error)
+                else:
+                    raise AssertionError("Missing text was executed")
+                assert agent.browser.evaluate(outcome) == before
+                assert not agent.state["history"] and not agent.state["text_calls"]
+            else:
+                state = agent.command("tick")
+                assert agent.browser.evaluate(outcome) == {
+                    "value": text, "inputs": [text],
+                    "results": "Showing stays in " + text if text else "Showing stays in all destinations",
+                }
+                assert len(state["history"]) == len(state["text_calls"]) == 1
+                assert state["history"][0]["text"] == state["text_calls"][0]["value"] == text
+    passed.append("agent ticks clear or replace the filter; missing text leaves the page and history unchanged")
+
     print("\n".join(passed))
-    print(f"PASS: {len(passed)} browser guard checks; no model calls")
+    print(f"PASS: {len(passed)} browser guard checks; no live model calls")
 
 
 if __name__ == "__main__":
