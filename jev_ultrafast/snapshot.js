@@ -7,8 +7,31 @@
   };
   for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
   const safe = e => !['password','file','hidden'].includes(e.type);
-  const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
-    e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  const visibleLabel = label => {
+    const walker=document.createTreeWalker(label,NodeFilter.SHOW_TEXT), range=document.createRange();
+    let text;
+    while ((text=walker.nextNode())) {
+      const parent=text.parentElement;
+      if (!text.textContent.trim() || parent.closest('[aria-hidden="true"],[inert],script,style') ||
+          !parent.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) continue;
+      range.selectNodeContents(text);
+      if ([...range.getClientRects()].some(r=>r.width>0 && r.height>0 &&
+          r.bottom>0 && r.top<innerHeight && r.right>0 && r.left<innerWidth)) return true;
+    }
+    return false;
+  };
+  const visible = e => {
+    if (e.closest('[aria-hidden="true"],[inert]')) return false;
+    if (e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return true;
+    // Styled native toggles can be transparent while their label remains visible.
+    for (let parent=e.parentElement; parent; parent=parent.parentElement)
+      if (getComputedStyle(parent).opacity==='0') return false;
+    return e.tagName==='INPUT' && ['radio','checkbox'].includes(e.type) &&
+      e.checkVisibility({checkOpacity:false,checkVisibilityCSS:true}) &&
+      [...e.labels].some(label => !label.closest('[aria-hidden="true"],[inert]') &&
+        label.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) && visibleLabel(label));
+  };
+  cache.visible=visible;
   const name = (e,seen=new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
