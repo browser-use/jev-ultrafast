@@ -4,12 +4,37 @@ import json
 import math
 import os
 import time
+import urllib.parse
 
 import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
 CLIENT = httpx.Client(http2=True, timeout=25)
+
+
+def provider_error_detail(response):
+    """The provider's own explanation, when it sends one.
+
+    Unknown-field rejections are only actionable with this text: Fireworks answers an unsupported
+    `reasoning` key with "Extra inputs are not permitted", which reads nothing like the bare
+    "HTTP 400" that used to be all the caller saw.
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    if isinstance(payload, list) and payload:  # the Gemini shim wraps errors in a list
+        payload = payload[0]
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error", payload)
+    if not isinstance(error, dict):
+        return ""
+    message = error.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return ""
+    return ": " + " ".join(message.split())[:200]
 
 
 def post_json(url, key, body):
@@ -22,7 +47,10 @@ def post_json(url, key, body):
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
-            raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
+            raise RuntimeError(
+                f"Model provider returned HTTP {response.status_code}"
+                f"{provider_error_detail(response)}; no action executed."
+            )
         return response.json()
     raise RuntimeError("Model unavailable")
 
@@ -157,22 +185,133 @@ def field_context(goal, action, page, history):
     }
 
 
+# OpenAI-compatible endpoints disagree about the request fields this helper sends, and several
+# reject an unknown key outright instead of ignoring it. Verified live, one field at a time:
+#
+#   Fireworks  (deepseek-v4p1-flash)   reasoning -> 400 "Extra inputs are not permitted"
+#                                      thinking  -> 200
+#   Gemini     (openai shim)           reasoning -> 400 'Unknown name "reasoning"'
+#                                      thinking  -> 400
+#   Groq       (openai/gpt-oss-20b)    reasoning -> 400 "property 'reasoning' is unsupported"
+#                                      thinking  -> 400 "property 'thinking' is unsupported"
+#   OpenRouter (inception/mercury-2.5) reasoning -> 200, thinking -> 200
+#   OpenAI     (o4-mini, o3-mini)      reasoning -> 400 "Unknown parameter: 'reasoning'"
+#                                      reasoning_effort -> 200, max_tokens -> 400
+#                                      "Use 'max_completion_tokens' instead"
+#   OpenAI     (gpt-4o-mini)           reasoning_effort -> 400 unrecognized, max_tokens -> 200
+#
+# So no single spelling is safe everywhere, and on OpenAI the right answer depends on the model, not
+# the host. `omit` is the only option every endpoint accepted, so it is the fallback. Driving this
+# off a provider table (rather than one hardcoded DeepSeek substring) is what stops Fireworks 400ing
+# on `reasoning` while OpenRouter keeps the payload it documents.
+REASONING_DIALECTS = {
+    "reasoning": {"reasoning": {"effort": "low"}},
+    "effort": {"reasoning_effort": "low"},
+    "thinking": {"thinking": {"type": "disabled"}},
+    "omit": {},
+}
+REASONING_OFF = {
+    "reasoning": {"reasoning": {"enabled": False}},
+    "effort": {"reasoning_effort": "low"},  # o-series has no "off"; low is its floor
+    "thinking": {"thinking": {"type": "disabled"}},
+    "omit": {},
+}
+PROVIDER_DIALECTS = (
+    ("openrouter.ai", "reasoning"),
+    ("api.deepseek.com", "thinking"),
+    ("fireworks.ai", "thinking"),
+    ("api.groq.com", "omit"),
+    ("generativelanguage.googleapis.com", "omit"),
+)
+OPENAI_REASONING_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+
+
+def is_first_party_deepseek(model):
+    """Models that legitimately pair with the DeepSeek default endpoint."""
+    return model == "deepseek-chat" or model.startswith("deepseek-")
+
+
+def host_of(base):
+    """The lowercase hostname, so `https://API.OpenAI.com/v1` matches like the lowercase form."""
+    return urllib.parse.urlparse(base).netloc.lower()
+
+
+def is_openai_reasoning_model(model):
+    """OpenAI's reasoning families: they take `max_completion_tokens` and a flat `reasoning_effort`
+    where gpt-4o/gpt-4.1 take `max_tokens` and reject `reasoning_effort` outright.
+
+    Checked on the model rather than the host, because the same model reached through a proxy, an
+    Azure deployment, or a router needs the same two fields. A leading `vendor/` segment (the
+    OpenRouter spelling) is ignored so `openai/o4-mini` is recognised too.
+    """
+    name = model.strip().lower()
+    return name.rsplit("/", 1)[-1].startswith(OPENAI_REASONING_PREFIXES)
+
+
+def reasoning_dialect(base, model):
+    # Model first: every endpoint tested (OpenRouter, Fireworks, Groq, Gemini) accepts and ignores
+    # `reasoning_effort`, so an OpenAI reasoning model gets its own vocabulary even behind a proxy.
+    if is_openai_reasoning_model(model):
+        return "effort"
+    host = host_of(base)
+    for known, dialect in PROVIDER_DIALECTS:
+        if known in host:
+            return dialect
+    return "omit"
+
+
+def token_limit_field(base, model):
+    """o-series and gpt-5 400 on `max_tokens` ("Use 'max_completion_tokens' instead"), wherever they
+    are served from; every endpoint tested accepts `max_completion_tokens` for other models too."""
+    return "max_completion_tokens" if is_openai_reasoning_model(model) else "max_tokens"
+
+
 def field_text(context):
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
-    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-    model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    base = os.environ.get("TEXT_MODEL_BASE_URL", "").strip().rstrip("/")
+    model = os.environ.get("TEXT_MODEL", "").strip()
+    if not base:
+        # The DeepSeek fallbacks only make sense together. With TEXT_MODEL set but no endpoint,
+        # the old default sent the configured key to api.deepseek.com — and README.md tells you
+        # that key is an OpenRouter key, so it left for a vendor it does not belong to. Paired
+        # defaults are kept for a DeepSeek setup (any first-party deepseek-* model, not just
+        # deepseek-chat); the ambiguous half-configured case fails loudly, like the missing key.
+        if model and not is_first_party_deepseek(model):
+            raise ValueError(
+                "TEXT_MODEL is set but TEXT_MODEL_BASE_URL is not, so the key would be sent to the "
+                "default endpoint. Set TEXT_MODEL_BASE_URL to the endpoint that issued the key."
+            )
+        base = DEEPSEEK_BASE
+    model = model or "deepseek-chat"
+    dialect = reasoning_dialect(base, model)
+    setting = os.environ.get("TEXT_MODEL_REASONING", "").strip().lower()
+    if setting == "omit":
+        # Some OpenAI-compatible endpoints reject an unknown `reasoning` key outright: Fireworks
+        # ("Extra inputs are not permitted"), Groq ("property 'reasoning' is unsupported"), and
+        # Gemini's OpenAI-compatible shim ("Unknown name \"reasoning\""). For those, leave the
+        # field out entirely — `none` still sends the key, and 400s.
+        reasoning = {}
+    elif setting == "none":
+        # Disable reasoning in whichever dialect this endpoint speaks. Sending the OpenRouter
+        # spelling at a `thinking` endpoint (DeepSeek, Fireworks) is itself an unknown key.
+        reasoning = REASONING_OFF[dialect]
+    elif setting:
+        raise ValueError(
+            "TEXT_MODEL_REASONING=%r is not a recognised setting; use 'none' (disable reasoning in "
+            "the endpoint's own dialect) or 'omit' (send no reasoning field at all)." % setting
+        )
+    else:
+        reasoning = REASONING_DIALECTS[dialect]
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
         key,
         {
             "model": model,
-            "max_tokens": 1024,
+            token_limit_field(base, model): 1024,
             "response_format": {"type": "json_object"},
             **reasoning,
             "messages": [
