@@ -59,7 +59,15 @@ class Agent:
             except StalePage:
                 state["decision"] = None
                 state["status"] = "ready"
-                state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                # Recovery observation is a read; retry while a navigation is still in flight (slow links).
+                for attempt in range(24):
+                    try:
+                        state["page"] = state["browser"].observe(screenshot=self.screenshots)
+                        break
+                    except StalePage:
+                        if attempt == 23:
+                            raise
+                        time.sleep(0.5)
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
         elif name == "predict":
@@ -68,6 +76,12 @@ class Agent:
             if state["started_at"] is None:
                 state["started_at"] = time.perf_counter()
             if not state["browser"].fresh(state["page"]):
+                state["page"] = state["browser"].observe(screenshot=self.screenshots)
+            # A freshly navigated document may expose no controls yet on a slow link; wait briefly before deciding.
+            for _ in range(20):
+                if any(a["kind"] in ("click", "fill", "select") for a in state["page"]["actions"]):
+                    break
+                time.sleep(0.5)
                 state["page"] = state["browser"].observe(screenshot=self.screenshots)
             state["decision"] = None
             if state["status"] in {"done", "blocked"}:

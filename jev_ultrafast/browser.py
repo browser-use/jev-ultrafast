@@ -9,6 +9,9 @@ from pathlib import Path
 from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
 
+# Navigation and post-navigation reads can exceed the harness's 5s IPC default on slow links.
+IPC_TIMEOUT = 30
+
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
@@ -33,7 +36,7 @@ class Browser:
             time.sleep(0.02)
 
     def call(self, method, **params):
-        return cdp(method, session_id=self.session, **params)
+        return cdp(method, session_id=self.session, _response_timeout=IPC_TIMEOUT, **params)
 
     def evaluate(self, expression):
         response = self.call("Runtime.evaluate", expression=expression, returnByValue=True)
@@ -42,6 +45,16 @@ class Browser:
         return response.get("result", {}).get("value")
 
     def observe(self, screenshot=True):
+        # On slow links a freshly navigated document may still be loading scripts that replace controls
+        # (e.g. Wikipedia's enhanced search box); wait for readyState=complete, bounded.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                if self.evaluate("document.readyState") == "complete":
+                    break
+            except Exception:
+                pass
+            time.sleep(0.1)
         if getattr(self, "after_input", None):
             action, self.after_input = self.after_input, None
             # This is read-only and happens after execution was logged, even if navigation interrupts it.
@@ -122,7 +135,7 @@ def browser_operation(request):
     session = request["session"]
 
     def call(method, **params):
-        return cdp(method, session_id=session, **params)
+        return cdp(method, session_id=session, _response_timeout=IPC_TIMEOUT, **params)
 
     def evaluate(expression):
         result = call("Runtime.evaluate", expression=expression, returnByValue=True)
