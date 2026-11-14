@@ -164,8 +164,17 @@ def field_text(context):
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    mode = os.environ.get("TEXT_MODEL_REASONING")
+    if mode == "none":
+        # Provider-specific "thinking off" switches; strict endpoints reject an unknown top-level `reasoning` key.
+        if "aliyuncs.com" in base:  # Qwen / DashScope compatible-mode
+            reasoning = {"enable_thinking": False}
+        elif "volces.com" in base:  # Doubao / Volcengine Ark
+            reasoning = {"thinking": {"type": "disabled"}}
+        elif "api.deepseek.com/" not in base:
+            reasoning = {"reasoning": {"enabled": False}}
+    elif mode == "omit":
+        reasoning = {}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
