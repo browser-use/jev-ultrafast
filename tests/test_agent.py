@@ -318,3 +318,40 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_low_confidence_done_needs_a_second_vote(runner):
+    runner.done_min_confidence = 0.7
+    runner.state["decision"] = {**decision("DONE"), "operation": "DONE", "target": None, "confidence": 0.4}
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["status"] == "ready"  # first low-confidence DONE is only a vote
+    runner.state["decision"] = {**decision("DONE"), "operation": "DONE", "target": None, "confidence": 0.4}
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["status"] == "done"
+
+
+def test_confident_done_is_accepted_at_once(runner):
+    runner.done_min_confidence = 0.7
+    runner.state["decision"] = {**decision("DONE"), "operation": "DONE", "target": None, "confidence": 0.9}
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["status"] == "done"
+
+
+def test_blocked_waits_once_before_being_accepted(runner, monkeypatch):
+    monkeypatch.setattr(loop.time, "sleep", lambda s: None)
+    runner.state["decision"] = {**decision("BLOCKED"), "operation": "BLOCKED", "target": None, "confidence": 0.9}
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["status"] == "ready"
+    assert runner.state["browser"].observe.call_count == 1
+    runner.state["decision"] = {**decision("BLOCKED"), "operation": "BLOCKED", "target": None, "confidence": 0.9}
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["status"] == "blocked"
+
+
+def test_code_owned_completion_ends_the_run_without_the_model(runner):
+    runner.done_when = lambda page: page["url"].startswith("https://example.test/")
+    runner.state["status"] = "ready"
+    runner.state["decision"] = None
+    runner.command("predict", {})
+    assert runner.state["status"] == "done"
+    assert runner.state["done_by"] == "code"

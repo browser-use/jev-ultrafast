@@ -17,6 +17,10 @@ def post_json(url, key, body):
         try:
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
         except httpx.HTTPError:
+            # A request that never reached the model cannot have caused an action; retrying is safe.
+            if attempt < 2:
+                time.sleep(1.0 * 2**attempt)
+                continue
             raise RuntimeError("Model connection failed; no action executed.") from None
         if response.status_code in {429, 529, 503} and attempt < 2:
             time.sleep(0.5 * 2**attempt)
@@ -78,7 +82,7 @@ def action_space(actions):
     return elements, targets, controls
 
 
-def choose(state, goal, history):
+def choose(state, goal, history, start_url=None):
     elements, targets, controls = action_space(state["actions"])
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
@@ -108,6 +112,7 @@ def choose(state, goal, history):
         "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
         "state": {
             "page": {k: state[k] for k in ("url", "title", "text")},
+            "navigation": {"start_url": start_url, "left_start_page": bool(start_url) and state["url"] != start_url},
             "elements": elements,
             "recent_actions": [
                 {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
@@ -164,8 +169,17 @@ def field_text(context):
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    mode = os.environ.get("TEXT_MODEL_REASONING")
+    if mode == "none":
+        # Provider-specific "thinking off" switches; strict endpoints reject an unknown top-level `reasoning` key.
+        if "aliyuncs.com" in base:  # Qwen / DashScope compatible-mode
+            reasoning = {"enable_thinking": False}
+        elif "volces.com" in base:  # Doubao / Volcengine Ark
+            reasoning = {"thinking": {"type": "disabled"}}
+        elif "api.deepseek.com/" not in base:
+            reasoning = {"reasoning": {"enabled": False}}
+    elif mode == "omit":
+        reasoning = {}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
