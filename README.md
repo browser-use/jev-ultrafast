@@ -98,6 +98,43 @@ uv run --env-file .env python examples/run.py \
 
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
+### Inject model providers
+
+Decision and text providers are independent. Inject either one for a single agent; the other keeps using its existing environment-variable configuration.
+
+```python
+from jev_ultrafast import Agent, OpenAITextProvider, TypeSafeProvider
+
+decision_provider = TypeSafeProvider(api_key="server-side-key", model="jev-latest")
+text_provider = OpenAITextProvider(
+    base_url="https://openrouter.ai/api/v1",
+    api_key="server-side-key",
+    model="inception/mercury-2.5",
+    reasoning="none",
+)
+
+with Agent(
+    "https://example.com",
+    "Find the requested item",
+    decision_provider=decision_provider,
+    text_provider=text_provider,
+) as agent:
+    for state in agent.run():
+        print(state["status"])
+```
+
+`DecisionProvider` implementations expose `model` and `decide(request)`. They receive the code-owned TypeSafe request and return a raw TypeSafe-compatible response. `TextProvider` implementations expose `model` and `generate(request)`, returning a raw OpenAI-compatible chat-completions response. Jev still validates the selected operation, matching target head, probabilities, and generated text before browser execution.
+
+Explicit `TypeSafeProvider` and `OpenAITextProvider` constructor values take precedence over environment variables. `OpenAITextProvider` accepts a base URL, API key, model, reasoning setting, and additional headers. OpenRouter is the provided configuration example. Cloudflare or self-hosted gateways work when their endpoint implements the same `/chat/completions` contract; native Workers AI schemas and vendor SDKs are outside this integration.
+
+| Provider | Decision | Text | Support |
+| --- | --- | --- | --- |
+| TypeSafe | Built in | No | `TypeSafeProvider` and existing `TYPESAFE_*` variables |
+| OpenRouter | No | Compatible | `OpenAITextProvider` and existing `TEXT_MODEL_*` variables |
+| Cloudflare gateway | Custom | Compatible | Requires an OpenAI-compatible chat-completions endpoint |
+| Self-hosted gateway | Custom | Compatible | Implement `DecisionProvider` or configure `OpenAITextProvider` |
+| Test fake | Yes | Yes | Implement either protocol; no production fake is shipped |
+
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
@@ -119,6 +156,7 @@ Every executed target is resolved from an observed node. The executor rechecks p
 | [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
 | [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
 | [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
+| [providers.py](jev_ultrafast/providers.py) | Injectable decision/text protocols and default HTTP providers |
 | [questions.py](jev_ultrafast/questions.py) | Model instructions |
 | [demo.py](jev_ultrafast/demo.py) | Local inspector |
 

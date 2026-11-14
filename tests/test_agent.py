@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from jev_ultrafast import agent as loop
-from jev_ultrafast import model
+from jev_ultrafast import model, providers
 from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
 
 
@@ -43,6 +43,50 @@ def decision(action="e1"):
         "latency_ms": 10,
         "usage": {},
     }
+
+
+class FakeDecisionProvider:
+    model = "fake-decision"
+
+    def __init__(self, response=None, error=None):
+        self.requests = []
+        self.response = response
+        self.error = error
+
+    def decide(self, request):
+        self.requests.append(deepcopy(request))
+        if self.error:
+            raise self.error
+        if self.response:
+            return self.response(request)
+        questions = request["questions"]
+        return {
+            "model": self.model,
+            "usage": {"input_tokens": 1},
+            "answers": {
+                "operation": choice(questions["operation"]["criteria"], "TYPE_TEXT"),
+                "type_text_target": choice(questions["type_text_target"]["criteria"], "1"),
+            },
+        }
+
+
+class FakeTextProvider:
+    model = "fake-text"
+
+    def __init__(self, content='{"text":"book"}', error=None):
+        self.requests = []
+        self.content = content
+        self.error = error
+
+    def generate(self, request):
+        self.requests.append(deepcopy(request))
+        if self.error:
+            raise self.error
+        return {
+            "model": self.model,
+            "usage": {"input_tokens": 1},
+            "choices": [{"message": {"content": self.content}}],
+        }
 
 
 @pytest.mark.parametrize("mutation", ["unknown", "nan", "missing", "negative", "non_max", "confidence"])
@@ -157,6 +201,49 @@ def test_missing_text_credential_stops_before_guessing(monkeypatch):
         model.field_text({"goal": 'Enter "Zurich"'})
 
 
+def test_injected_providers_need_no_credentials_or_network(monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
+    monkeypatch.setattr(model, "post_json", Mock(side_effect=AssertionError("network called")))
+    monkeypatch.setattr(providers, "post_json", Mock(side_effect=AssertionError("network called")))
+    decisions = FakeDecisionProvider()
+    text = FakeTextProvider()
+
+    actual = model.choose(page(), "Find a book", [], provider=decisions)
+    value, helper = model.field_text({"goal": "Find a book"}, provider=text)
+
+    assert actual["choice"] == "e1" and actual["model"] == "fake-decision"
+    assert actual["usage"] == {"input_tokens": 1}
+    assert value == "book" and helper["model"] == "fake-text"
+    assert helper["usage"] == {"input_tokens": 1}
+    assert decisions.requests[0]["model"] == "fake-decision"
+    assert text.requests[0]["model"] == "fake-text"
+
+
+def test_injected_decision_still_uses_core_validation(monkeypatch):
+    monkeypatch.setattr(model, "post_json", Mock(side_effect=AssertionError("network called")))
+    monkeypatch.setattr(providers, "post_json", Mock(side_effect=AssertionError("network called")))
+
+    def invalid(request):
+        return {
+            "model": "fake",
+            "answers": {
+                "operation": choice(request["questions"]["operation"]["criteria"], "CLICK"),
+                "click_target": choice(["1", "2", "invented"], "invented"),
+            },
+        }
+
+    with pytest.raises(ValueError, match="Invalid TypeSafe"):
+        model.choose(page(), "Find a book", [], provider=FakeDecisionProvider(invalid))
+
+
+def test_injected_text_still_uses_core_validation(monkeypatch):
+    monkeypatch.setattr(model, "post_json", Mock(side_effect=AssertionError("network called")))
+    monkeypatch.setattr(providers, "post_json", Mock(side_effect=AssertionError("network called")))
+    with pytest.raises(ValueError, match="nothing typed"):
+        model.field_text({"goal": "Find a book"}, provider=FakeTextProvider('{"text":null}'))
+
+
 @pytest.fixture
 def runner():
     a = loop.Agent.__new__(loop.Agent)
@@ -176,6 +263,107 @@ def runner():
         "text_calls": [],
     }
     return a
+
+
+def test_agent_routes_both_injected_providers_without_network(runner, monkeypatch):
+    monkeypatch.setattr(model, "post_json", Mock(side_effect=AssertionError("network called")))
+    runner.decision_provider = FakeDecisionProvider()
+    runner.text_provider = FakeTextProvider()
+    runner.state["decision"] = None
+    runner.state["status"] = "ready"
+
+    runner.command("predict")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    runner.state["browser"].act.assert_called_once()
+    assert runner.state["browser"].act.call_args.kwargs["text"] == "book"
+    assert runner.state["decisions"][0]["model"] == "fake-decision"
+    assert runner.state["text_calls"][0]["model"] == "fake-text"
+
+
+def test_agent_can_inject_only_decisions_and_use_default_text(runner, monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"book"}'}}]})
+    provider_post = Mock(side_effect=AssertionError("network called"))
+    monkeypatch.setattr(model, "post_json", post)
+    monkeypatch.setattr(providers, "post_json", provider_post)
+    runner.decision_provider = FakeDecisionProvider()
+    runner.state["decision"] = None
+    runner.state["status"] = "ready"
+
+    runner.command("predict")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    assert post.call_count == 1
+    assert post.call_args.args[0].endswith("/chat/completions")
+    provider_post.assert_not_called()
+    assert runner.state["browser"].act.call_args.kwargs["text"] == "book"
+
+
+def test_agent_can_inject_only_text_and_use_default_decisions(runner, monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+
+    def post(_url, _key, body):
+        questions = body["questions"]
+        return {
+            "model": "default-decision",
+            "answers": {
+                "operation": choice(questions["operation"]["criteria"], "TYPE_TEXT"),
+                "type_text_target": choice(questions["type_text_target"]["criteria"], "1"),
+            },
+        }
+
+    model_post = Mock(side_effect=post)
+    provider_post = Mock(side_effect=AssertionError("network called"))
+    monkeypatch.setattr(model, "post_json", model_post)
+    monkeypatch.setattr(providers, "post_json", provider_post)
+    runner.text_provider = FakeTextProvider()
+    runner.state["decision"] = None
+    runner.state["status"] = "ready"
+
+    runner.command("predict")
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+
+    assert model_post.call_count == 1
+    provider_post.assert_not_called()
+    assert runner.state["decisions"][0]["model"] == "default-decision"
+    assert runner.state["browser"].act.call_args.kwargs["text"] == "book"
+
+
+@pytest.mark.parametrize("provider_name", ["decision_provider", "text_provider"])
+def test_agent_constructor_keeps_provider_injection_independent(monkeypatch, provider_name):
+    browser = Mock(observe=Mock(return_value=page()))
+    monkeypatch.setattr(loop, "Browser", Mock(return_value=browser))
+    provider = FakeDecisionProvider() if provider_name == "decision_provider" else FakeTextProvider()
+
+    agent = loop.Agent("https://example.test", "Find a book", **{provider_name: provider})
+
+    assert getattr(agent, provider_name) is provider
+    other = "text_provider" if provider_name == "decision_provider" else "decision_provider"
+    assert getattr(agent, other) is None
+    agent.close()
+
+
+@pytest.mark.parametrize("kind", ["decision", "text"])
+def test_provider_errors_stop_before_browser_mutation(runner, kind):
+    error = RuntimeError("provider stopped")
+    if kind == "decision":
+        runner.decision_provider = FakeDecisionProvider(error=error)
+        runner.state["decision"] = None
+        runner.state["status"] = "ready"
+    else:
+        runner.text_provider = FakeTextProvider(error=error)
+
+    with pytest.raises(RuntimeError, match="provider stopped"):
+        if kind == "decision":
+            runner.command("predict")
+        else:
+            runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    runner.state["browser"].act.assert_not_called()
 
 
 def test_stale_decision_is_consumed_before_any_mutation(runner):
