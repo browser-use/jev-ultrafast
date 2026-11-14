@@ -3,6 +3,7 @@
 import atexit
 import json
 import os
+import re
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,12 +22,40 @@ AGENT = None
 
 
 def load_environment():
+    """Read ./.env the way uv's --env-file does for these values: KEY=value lines, # comment lines, a value in
+    matching quotes ends at its closing quote (JEV_SECRETS='{"Password": "..."}' is JSON once loaded), and an
+    unquoted value ends before a " #" comment. Lines without a key are ignored."""
     path = Path.cwd() / ".env"
     if path.exists():
         for line in path.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key, value)
+            line = line.strip()
+            if "=" not in line or line.startswith("#"):
+                continue
+            key, raw = line.split("=", 1)
+            if key.strip():
+                try:
+                    os.environ.setdefault(key.strip(), env_value(raw))
+                except ValueError as problem:
+                    raise ValueError(f"{path}: {key.strip()}: {problem}") from None
+
+
+def env_value(raw):
+    """A quoted value runs to its closing quote: the last matching (unescaped) quote followed only by whitespace or
+    a comment, so an apostrophe inside it ("it's") is kept. An unquoted value ends before a " #" comment."""
+    raw = raw.strip()
+    if raw[:1] in ("'", '"'):
+        double = raw[0] == '"'
+        # In double quotes a quote is escaped only by an odd run of backslashes ("a\\\\" ends at its last quote).
+        closings = [i for i in range(1, len(raw)) if raw[i] == raw[0]
+                    and not (double and (len(raw[:i]) - len(raw[:i].rstrip("\\"))) % 2)
+                    and (not raw[i + 1:].strip() or raw[i + 1:].lstrip().startswith("#"))]
+        if not closings:
+            raise ValueError(f"Unclosed {raw[0]} quote in a .env value")
+        value = raw[1:closings[-1]]
+        # Double quotes allow \" and \\ escapes, as dotenv does; single quotes are literal.
+        return re.sub(r'\\(["\\])', r"\1", value) if double else value
+    comment = re.search(r"\s#", raw)
+    return raw[:comment.start()].rstrip() if comment else raw
 
 
 def response_state():

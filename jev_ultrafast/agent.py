@@ -5,8 +5,9 @@ import time
 from pathlib import Path
 
 from .browser import Browser, StalePage
-from .model import action_space, choose, field_context, field_text
+from .model import NoFieldValue, action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
+from .secrets import MASK, secret_for
 
 
 class Agent:
@@ -103,16 +104,30 @@ class Agent:
                 state["status"] = "blocked"
                 raise ValueError(f"Stopped at the {MAX_STEPS}-action demo budget")
             text, helper = None, None
-            if action["kind"] == "fill":
+            secret = action["kind"] == "fill" and action.get("secret")
+            if secret:
+                # A stored secret is read locally and typed. No model sees it, and the trace records only a mask.
+                text = secret_for(action["label"])
+            if action["kind"] == "fill" and text is None:
+                # Any other field, and a secret field with no stored entry (a password the goal sets, as when
+                # registering), takes its value from the goal.
                 if not state["browser"].fresh(page):
                     raise StalePage("Page changed before text generation. Choose again.")
                 context = field_context(state["goal"], action, page, state["history"])
                 if self.pending_text and self.pending_text[0] == context:
                     _, text, helper = self.pending_text
                 else:
-                    text, helper = field_text(context)
+                    try:
+                        text, helper = field_text(context)
+                    except NoFieldValue as missing:
+                        # Nothing was typed; stop cleanly rather than re-choosing the same field forever.
+                        state["status"] = "blocked"
+                        state["error"] = no_value_reason(action, secret, missing)
+                        state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
+                        return self.snapshot()
                     self.pending_text = (context, text, helper)
-                    state["text_calls"].append({**helper, "field": action["label"], "value": text})
+                    value = MASK if secret else text
+                    state["text_calls"].append({**helper, "field": action["label"], "value": value})
             # Browser.act checks freshness immediately before input, including after text generation.
             state["browser"].act(action, page, text=text)
             self.pending_text = None
@@ -127,7 +142,7 @@ class Agent:
                     "probability": decision["probabilities"][selected],
                     "confidence": decision["confidence"],
                     "latency_ms": decision["latency_ms"],
-                    "text": text,
+                    "text": MASK if secret else text,
                     "text_helper": helper["model"] if helper else None,
                     "text_latency_ms": helper["latency_ms"] if helper else 0,
                     "operation": decision["operation"],
@@ -172,3 +187,13 @@ class Agent:
 
     def __exit__(self, *_args):
         self.close()
+
+
+def no_value_reason(action, secret, missing):
+    """Why a field could not be filled. A password field with no stored entry is almost always a JEV_SECRETS key
+    that does not match its label, so say that rather than blaming the text helper."""
+    if secret:
+        return (f"No secret stored for the password field {action['label']!r} and the goal gives no value for it; "
+                "nothing typed. A JEV_SECRETS key matches a label ignoring case, surrounding whitespace and a "
+                "trailing * or colon.")
+    return str(missing)

@@ -1,5 +1,6 @@
 """Local-browser freshness/execution regressions. No model calls or external websites."""
 
+import json
 from urllib.parse import quote
 
 from jev_ultrafast.browser import Browser, StalePage
@@ -11,6 +12,7 @@ HTML = """<!doctype html><title>Guard checks</title>
 <label>City<input id="field" value="Zurich"></label>
 <label><input id="toggle" type="checkbox">Refundable</label>
 <select aria-label="Category"><option>All</option><option>Design</option></select>
+<label>Password<input id="pw" type="password"></label>
 <p id="outside">Unrelated offscreen text</p>"""
 
 
@@ -18,7 +20,12 @@ def main():
     browser = Browser("data:text/html," + quote(HTML))
     passed = []
     try:
+        browser.evaluate("document.querySelector('#pw').value='hunter2'")
         page = browser.observe(screenshot=False)
+        password = next(a for a in page["actions"] if a["label"] == "Password" and a["kind"] == "fill")
+        assert password.get("secret") is True and password["role"] == "textbox" and password["value"] == "(filled)"
+        assert "hunter2" not in json.dumps(page), "a password value left the page"
+        passed.append("a password field is a masked, secret textbox and its value never leaves the page")
         action = next(a for a in page["actions"] if a["label"] == "Continue")
         browser.evaluate("document.querySelector('#target').style.transform='translateX(200px)'")
         assert browser.fresh(page), "Movement should use fresh geometry, not another model call"
@@ -117,7 +124,7 @@ def main():
                          "document.querySelector('#suggestions').innerHTML='<div role=option>Generated</div>'"
                          "},60))")
         page = browser.observe(screenshot=False)
-        field = next(a for a in page["actions"] if a["kind"] == "fill")
+        field = next(a for a in page["actions"] if a["kind"] == "fill" and not a.get("secret"))
         browser.act(field, page, text="Generated")
         page = browser.observe(screenshot=False)
         value = browser.evaluate("document.querySelector('#query').value")

@@ -96,6 +96,25 @@ uv run --env-file .env python examples/run.py \
   --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
 ```
 
+### Logging in
+
+Password fields are observable, but their values never leave the page: every serialised value is masked.
+Keep the password out of the goal and in `.env`, as a JSON object mapping the field's label to its value:
+
+```bash
+# .env (single quotes keep a # or a space inside the secret intact)
+JEV_SECRETS='{"Password": "..."}'
+```
+
+```bash
+uv run --env-file .env python examples/run.py \
+  --url https://example.com/login --goal 'Log in as ada@example.com and open Settings.'
+```
+
+A key matches the label exactly (ignoring case and a trailing `*` or `:`), so `Password` never fills `Confirm
+password`. The agent types a stored value in-process and the trace records `(secret)`. A password field with no
+stored entry is filled from the goal like any other field, which is how a goal sets a new password.
+
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
 ## Why it moves

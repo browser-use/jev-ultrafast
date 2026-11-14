@@ -12,6 +12,10 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 CLIENT = httpx.Client(http2=True, timeout=25)
 
 
+class NoFieldValue(ValueError):
+    """The text helper found no value for the field in the goal. Nothing was typed."""
+
+
 def post_json(url, key, body):
     for attempt in range(3):
         try:
@@ -58,7 +62,8 @@ def action_space(actions):
         if node not in indices:
             index = str(len(elements) + 1)
             indices[node] = index
-            element = {k: action[k] for k in ("role", "value", "checked", "selected", "expanded") if k in action}
+            keys = ("role", "value", "checked", "selected", "expanded", "secret")
+            element = {k: action[k] for k in keys if k in action}
             element.update(index=index, label=action["label"].split(" → ")[0], operations=[])
             if kind == "select":
                 element["value"] = action.get("current_value", "")
@@ -82,7 +87,11 @@ def choose(state, goal, history):
     elements, targets, controls = action_space(state["actions"])
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
-        "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
+        "TYPE_TEXT": (
+            "Enter or replace text in an editable field. A small LLM will supply the value from the goal. "
+            "An element marked secret is filled from local secure storage when it has an entry there, so "
+            "choose it even though the goal never states its value."
+        ),
         "SELECT": "Select an observed dropdown value.",
     }
     operations = {key: labels[key] for key in targets}
@@ -98,7 +107,7 @@ def choose(state, goal, history):
                 index: {
                     "element": f"[{index}] {a['label']}",
                     "current_value": a.get("current_value", a.get("value", "")),
-                    **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
+                    **{k: a[k] for k in ("role", "checked", "selected", "expanded", "secret") if k in a},
                 }
                 for index, a in candidates.items()
             },
@@ -190,7 +199,7 @@ def field_text(context):
         if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
             raise ValueError()
     except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+        raise NoFieldValue("Text helper returned no valid field value; nothing typed.") from None
     return value, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),

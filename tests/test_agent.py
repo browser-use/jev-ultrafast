@@ -1,6 +1,7 @@
 """Offline contracts for a dynamic operation/target policy. No paid APIs."""
 
 import json
+import os
 import time
 from copy import deepcopy
 from unittest.mock import Mock
@@ -318,3 +319,154 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_secret_value_matches_its_exact_label_only(monkeypatch):
+    from jev_ultrafast.secrets import secret_for
+
+    monkeypatch.setenv("JEV_SECRETS", '{"Password": "hunter2", "user": "ada"}')
+    assert secret_for("password") == secret_for("Password *") == secret_for(" Password: ") == "hunter2"
+    assert secret_for("Confirm password") is None  # Never a substring match.
+    assert secret_for("Username") is None
+    assert secret_for("Email") is None
+    monkeypatch.setenv("JEV_SECRETS", "not json")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        secret_for("Password")
+
+
+def test_secret_field_is_typed_from_the_vault_and_masked_in_history(runner, monkeypatch):
+    monkeypatch.setenv("JEV_SECRETS", '{"Password": "hunter2"}')
+    helper = Mock()
+    monkeypatch.setattr(loop, "field_text", helper)
+    p = runner.state["page"]
+    p["actions"].insert(0, {"id": "pw", "kind": "fill", "label": "Password", "role": "textbox", "value": "",
+                            "node": 40, "secret": True})
+    runner.state["decision"] = decision("pw")
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+    helper.assert_not_called()  # No model ever sees or writes the secret.
+    assert runner.state["browser"].act.call_args.kwargs["text"] == "hunter2"
+    assert runner.state["history"][-1]["text"] == "(secret)"
+    assert "hunter2" not in json.dumps(runner.state["history"])
+
+
+def test_policy_is_told_which_fields_are_secret(monkeypatch):
+    p = page()
+    p["actions"].insert(0, {"id": "pw", "kind": "fill", "label": "Password", "role": "textbox", "value": "",
+                            "node": 40, "secret": True})
+    seen = {}
+
+    def post(_url, _key, body):
+        seen.update(body)
+        return {"model": "test", "answers": {"operation": choice(body["questions"]["operation"]["criteria"], "WAIT")}}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    model.choose(p, "Log in", [])
+    assert seen["state"]["elements"][0]["secret"] is True
+    assert seen["questions"]["type_text_target"]["criteria"]["1"]["secret"] is True
+    assert "secret" in seen["questions"]["operation"]["criteria"]["TYPE_TEXT"]
+
+
+def secret_field(runner):
+    p = runner.state["page"]
+    p["actions"].insert(0, {"id": "pw", "kind": "fill", "label": "New password", "role": "textbox", "value": "",
+                            "node": 40, "secret": True})
+    p["actions"].insert(0, {"id": "pwc", "kind": "click", "label": "Open New password", "role": "textbox",
+                            "value": "", "node": 40, "secret": True})
+    p["fingerprint"] = fingerprint(p)
+    return p
+
+
+def test_a_secret_field_without_a_stored_entry_takes_its_value_from_the_goal(runner, monkeypatch):
+    monkeypatch.setenv("JEV_SECRETS", '{"Password": "hunter2"}')
+    # A stand-in helper that can only answer from the goal it is given.
+    helper = Mock(side_effect=lambda context: (context["goal"].split()[-1], {"model": "t", "latency_ms": 1}))
+    monkeypatch.setattr(loop, "field_text", helper)
+    p = secret_field(runner)
+    runner.state["goal"] = "Register with the password S3t-by-goal"
+    runner.state["decision"] = decision("pw")
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+    assert helper.call_args.args[0]["goal"] == "Register with the password S3t-by-goal"
+    assert runner.state["browser"].act.call_args.kwargs["text"] == "S3t-by-goal"
+    assert "S3t-by-goal" not in json.dumps(runner.state["history"] + runner.state["text_calls"])
+
+
+def test_a_field_with_no_value_anywhere_stops_the_run_cleanly(runner, monkeypatch):
+    monkeypatch.setenv("JEV_SECRETS", "{}")
+    no_value = model.NoFieldValue("Text helper returned no valid field value")
+    monkeypatch.setattr(loop, "field_text", Mock(side_effect=no_value))
+    p = secret_field(runner)
+    runner.state["decision"] = decision("pw")
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+    assert runner.state["status"] == "blocked" and "No secret stored" in runner.state["error"]
+    runner.state["browser"].act.assert_not_called()
+
+
+def test_clicking_a_password_field_is_not_recorded_as_a_secret(runner, monkeypatch):
+    p = secret_field(runner)
+    runner.state["decision"] = decision("pwc")
+    runner.command("act", {"fingerprint": p["fingerprint"]})
+    assert runner.state["history"][-1]["text"] is None
+
+
+def test_a_missing_text_model_key_is_not_mistaken_for_a_missing_value(runner, monkeypatch):
+    monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
+    p = runner.state["page"]
+    runner.state["decision"] = decision("e1")
+    with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
+        runner.command("act", {"fingerprint": p["fingerprint"]})
+
+
+def test_the_inspector_loads_a_quoted_json_secret_as_json(tmp_path, monkeypatch):
+    from jev_ultrafast import demo
+    from jev_ultrafast.secrets import secret_for
+
+    (tmp_path / ".env").write_text("# comment\nJEV_SECRETS='{\"Password\": \"p#ss word\"}'\n TEXT_MODEL = \"m\" \n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("JEV_SECRETS", raising=False)
+    monkeypatch.delenv("TEXT_MODEL", raising=False)
+    demo.load_environment()
+    assert secret_for("Password") == "p#ss word"
+    assert os.environ["TEXT_MODEL"] == "m"
+    # load_environment() writes os.environ directly, which monkeypatch does not track: remove what it loaded.
+    monkeypatch.delenv("JEV_SECRETS")
+    monkeypatch.delenv("TEXT_MODEL")
+
+
+@pytest.mark.parametrize(("raw", "value"), [
+    ("'{\"Note\": \"a#b\"}'  # stored for the demo", '{"Note": "a#b"}'),
+    ('"mercury"   # cheap', "mercury"),
+    ("mercury # cheap", "mercury"),
+    ("p#ss", "p#ss"),
+    ("", ""),
+    ("'{\"Password\": \"it's a secret\"}'", '{"Password": "it\'s a secret"}'),
+    ("'plain' # don't", "plain"),
+    ('"{\\"Password\\": \\"hunter2\\"}"', '{"Password": "hunter2"}'),
+    ('"back\\\\slash"', "back\\slash"),
+    ('"ends in a backslash\\\\"', "ends in a backslash\\"),
+    ("'{\\\"x\\\"}'", '{\\"x\\"}'),
+])
+def test_inspector_env_values_follow_dotenv(raw, value):
+    from jev_ultrafast.demo import env_value
+
+    assert env_value(raw) == value
+
+
+def test_inspector_ignores_a_line_without_a_key(tmp_path, monkeypatch):
+    from jev_ultrafast import demo
+
+    (tmp_path / ".env").write_text("= orphan\n = also\nJEV_DEMO_CHECK=1\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("JEV_DEMO_CHECK", raising=False)
+    demo.load_environment()
+    assert os.environ["JEV_DEMO_CHECK"] == "1"
+    monkeypatch.delenv("JEV_DEMO_CHECK")
+
+
+def test_inspector_rejects_an_unclosed_quote(tmp_path, monkeypatch):
+    from jev_ultrafast import demo
+
+    (tmp_path / ".env").write_text("TEXT_MODEL='gpt-4o\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="TEXT_MODEL: Unclosed ' quote"):
+        demo.load_environment()
