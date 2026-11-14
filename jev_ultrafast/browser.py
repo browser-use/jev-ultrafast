@@ -190,5 +190,10 @@ def browser_operation(request):
         raise StalePage("Document is navigating")
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
-        info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        try:
+            info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]
+        except TimeoutError:
+            # Screenshots do not drive the agent. A throttled background tab must
+            # not discard an otherwise complete structured observation.
+            info["screenshot"] = None
     return info

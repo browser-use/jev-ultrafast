@@ -41,7 +41,8 @@ class Agent:
         )
         if self.record_dir:
             self.record_dir.mkdir(parents=True, exist_ok=True)
-            (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
+            if screenshot := page.get("screenshot"):
+                (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(screenshot))
 
     def snapshot(self):
         return {
@@ -146,9 +147,9 @@ class Agent:
                 url=state["page"]["url"],
                 elapsed_ms=state["elapsed_ms"],
             )
-            if state["record"]:
+            if state["record"] and (screenshot := state["page"].get("screenshot")):
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
-                    base64.b64decode(state["page"]["screenshot"])
+                    base64.b64decode(screenshot)
                 )
             repeated = state["history"][-3:]
             state["status"] = (
