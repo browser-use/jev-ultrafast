@@ -146,9 +146,25 @@ def browser_operation(request):
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-              if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+              const hittable=(el)=>{
+                if(!el) return null;
+                const b=el.getBoundingClientRect(), cx=b.x+b.width/2, cy=b.y+b.height/2;
+                if(!b.width||!b.height||cx<0||cy<0||cx>=innerWidth||cy>=innerHeight) return null;
+                if(!el.contains(document.elementFromPoint(cx,cy)) || el.matches(':disabled') ||
+                   el.closest('[aria-disabled="true"],[inert]') ||
+                   !el.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
+                return {x:cx,y:cy};
+              };
+              let point=hittable(e);
+              if(!point && action.kind!=='select'){
+                // Visually-hidden inputs (custom radio/checkbox/toggle) are 0-1px and covered by
+                // their styled <label>, so they can't be clicked at their own centre. Clicking the
+                // associated label activates the control, so fall back to a hit-testable label.
+                const labels=e.labels ? [...e.labels] : (e.closest('label') ? [e.closest('label')] : []);
+                if(!labels.length && e.id){ try{ labels.push(...document.querySelectorAll('label[for="'+CSS.escape(e.id)+'"]')); }catch(_){} }
+                for(const label of labels){ point=hittable(label); if(point) break; }
+              }
+              if(!point) return null;
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
@@ -156,7 +172,7 @@ def browser_operation(request):
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
-              return {x,y};
+              return point;
             })(""" + json.dumps(action) + ")")
             if target is None:
                 if kind == "select":
