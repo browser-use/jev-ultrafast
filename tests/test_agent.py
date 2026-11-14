@@ -113,6 +113,32 @@ def test_click_cannot_consume_a_text_target(monkeypatch):
         model.choose(page(), "Find a book", [])
 
 
+@pytest.mark.parametrize("missing_key", ["answers", "model"])
+def test_missing_typesafe_envelope_key_is_rejected_safely(monkeypatch, missing_key):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+
+    def post(_url, _key, body):
+        if missing_key == "answers":
+            return {"model": "test"}
+        return {"answers": {"operation": choice(body["questions"]["operation"]["criteria"], "BLOCKED")}}
+
+    monkeypatch.setattr(model, "post_json", post)
+
+    with pytest.raises(ValueError) as error:
+        model.choose(page(), "Find a book", [])
+    assert str(error.value) == "Invalid TypeSafe response; no action executed."
+
+
+@pytest.mark.parametrize("response", [{"answers": None, "model": "test"}, {"answers": [], "model": "test"}, []])
+def test_malformed_typesafe_answers_are_rejected_safely(monkeypatch, response):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", Mock(return_value=response))
+
+    with pytest.raises(ValueError) as error:
+        model.choose(page(), "Find a book", [])
+    assert str(error.value) == "Invalid TypeSafe response; no action executed."
+
+
 def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch):
     p = page()
     p["actions"].insert(0, {
