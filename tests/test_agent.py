@@ -115,17 +115,27 @@ def test_click_cannot_consume_a_text_target(monkeypatch):
 
 def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch):
     p = page()
-    p["actions"].insert(0, {
-        "id": "toggle", "kind": "click", "label": "Free cancellation", "node": 30,
-        "role": "checkbox", "checked": "true", "selected": False,
-    })
+    p["actions"].insert(
+        0,
+        {
+            "id": "toggle",
+            "kind": "click",
+            "label": "Free cancellation",
+            "node": 30,
+            "role": "checkbox",
+            "checked": "true",
+            "selected": False,
+        },
+    )
 
     def post(_url, _key, body):
         questions = body["questions"]
+        state = body["state"]
         target = questions["click_target"]
-        assert target["criteria"]["1"]["checked"] == "true"
-        assert target["criteria"]["1"]["selected"] is False
-        assert questions["operation"]["instructions"]["rules"] in target["instructions"]["rules"]
+        assert target["criteria"]["1"] == "[1] Free cancellation"
+        assert "(checked: true)" in state["elements"]
+        assert model.NEXT_ACTION in state["rules"]
+        assert model.TARGET in state["rules"]
         return {
             "model": "test",
             "answers": {
@@ -261,9 +271,18 @@ def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, r
     cdp = Mock(return_value=response)
     monkeypatch.setattr(browser, "cdp", cdp)
     with pytest.raises(RuntimeError, match="Dropdown execution"):
-        browser_operation({"operation": "act", "session": "test", "action": {
-            "id": "e1", "kind": "select", "node": 1, "value": "Design",
-        }})
+        browser_operation(
+            {
+                "operation": "act",
+                "session": "test",
+                "action": {
+                    "id": "e1",
+                    "kind": "select",
+                    "node": 1,
+                    "value": "Design",
+                },
+            }
+        )
     assert cdp.call_count == 1
 
 
