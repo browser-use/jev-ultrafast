@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,17 +21,125 @@ class StalePage(ValueError):
 class Browser:
     def __init__(self, url):
         ensure_daemon()
+        targets_resp = cdp("Target.getTargets")
+        self.initial_targets = {t["targetId"] for t in targets_resp.get("targetInfos", [])}
         self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
-        self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
-        # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
-        self.call("Emulation.setFocusEmulationEnabled", enabled=True)
+        self.owned_targets = [self.target]
+        self.target_history = [self.target]
+        self._configure_session(self.session)
         self.call("Page.navigate", url=url)
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if self.evaluate("document.readyState") == "complete":
-                break
-            time.sleep(0.02)
+        self._wait_ready()
+
+    def _configure_session(self, session_id):
+        width = int(os.environ.get("VIEWPORT_WIDTH", 1120))
+        height = int(os.environ.get("VIEWPORT_HEIGHT", 780))
+        try:
+            cdp(
+                "Emulation.setDeviceMetricsOverride",
+                session_id=session_id,
+                width=width,
+                height=height,
+                deviceScaleFactor=1,
+                mobile=False,
+            )
+            cdp("Emulation.setFocusEmulationEnabled", session_id=session_id, enabled=True)
+        except Exception:
+            pass
+
+    def _wait_ready(self, deadline=15):
+        end_time = time.monotonic() + deadline
+        last_count = -1
+        stable_since = None
+        while time.monotonic() < end_time:
+            try:
+                info = self.evaluate("""(() => {
+                    if (window.location.href === 'about:blank') return { ready: false, frames: 0, count: 0 };
+                    if (document.readyState !== 'complete') return { ready: false, frames: 0, count: 0 };
+                    const frames = document.querySelectorAll('iframe, frame');
+                    let count = document.querySelectorAll('*').length;
+                    let framesLoading = false;
+                    for (const f of frames) {
+                        try {
+                            if (f.contentDocument) {
+                                if (f.contentDocument.readyState !== 'complete') framesLoading = true;
+                                count += f.contentDocument.querySelectorAll('*').length;
+                            }
+                        } catch (e) {}
+                    }
+                    return { ready: !framesLoading, frames: frames.length, count };
+                })()""")
+                if info and info.get("ready"):
+                    if info.get("frames", 0) == 0:
+                        break
+                    curr_count = info.get("count", 0)
+                    now = time.monotonic()
+                    if curr_count == last_count and curr_count > 30:
+                        if stable_since and (now - stable_since) >= 0.35:
+                            break
+                    else:
+                        last_count = curr_count
+                        stable_since = now
+            except Exception:
+                pass
+            time.sleep(0.05)
+
+    def _switch_to_target(self, new_target_id):
+        if getattr(self, "target", None) == new_target_id and getattr(self, "session", None):
+            return
+        self.target = new_target_id
+        if not hasattr(self, "owned_targets"):
+            self.owned_targets = []
+        if new_target_id not in self.owned_targets:
+            self.owned_targets.append(new_target_id)
+        if not hasattr(self, "target_history"):
+            self.target_history = []
+        if new_target_id not in self.target_history:
+            self.target_history.append(new_target_id)
+        self.session = cdp("Target.attachToTarget", targetId=new_target_id, flatten=True)["sessionId"]
+        self._configure_session(self.session)
+        try:
+            cdp("Target.activateTarget", targetId=new_target_id)
+        except Exception:
+            pass
+        self._wait_ready(deadline=5)
+
+    def _sync_targets(self):
+        try:
+            targets = cdp("Target.getTargets").get("targetInfos", [])
+            page_targets = {t["targetId"]: t for t in targets if t.get("type") == "page"}
+
+            # If current target was closed, backtrack in history
+            if getattr(self, "target", None) not in page_targets:
+                history = getattr(self, "target_history", [])
+                while history and history[-1] not in page_targets:
+                    history.pop()
+                if history:
+                    self._switch_to_target(history[-1])
+                elif page_targets:
+                    self._switch_to_target(next(iter(page_targets.keys())))
+                else:
+                    raise StalePage("All open pages were closed")
+
+            # Check if a new window/tab was opened from our session
+            initial = getattr(self, "initial_targets", set())
+            owned = getattr(self, "owned_targets", [])
+            new_pages = [
+                t for t in targets
+                if t.get("type") == "page"
+                and (
+                    t.get("openerId") in owned
+                    or (t["targetId"] not in initial and t["targetId"] not in owned)
+                )
+                and not t.get("url", "").startswith("chrome://")
+            ]
+            if new_pages:
+                latest = new_pages[-1]
+                self._switch_to_target(latest["targetId"])
+        except StalePage:
+            raise
+        except Exception:
+            pass
 
     def call(self, method, **params):
         return cdp(method, session_id=self.session, **params)
@@ -42,6 +151,7 @@ class Browser:
         return response.get("result", {}).get("value")
 
     def observe(self, screenshot=True):
+        self._sync_targets()
         if getattr(self, "after_input", None):
             action, self.after_input = self.after_input, None
             # This is read-only and happens after execution was logged, even if navigation interrupts it.
@@ -104,12 +214,44 @@ class Browser:
             time.sleep(0.1)
         result = browser_operation({"operation": "act", "session": self.session, "action": action, "text": text})
         self.after_input = action if action["kind"] != "wait" else None
+        if action.get("kind") == "click":
+            for _ in range(8):
+                try:
+                    targets = cdp("Target.getTargets").get("targetInfos", [])
+                    initial = getattr(self, "initial_targets", set())
+                    owned = getattr(self, "owned_targets", [])
+                    has_new = any(
+                        t.get("type") == "page"
+                        and (
+                            t.get("openerId") in owned
+                            or (t["targetId"] not in initial and t["targetId"] not in owned)
+                        )
+                        and not t.get("url", "").startswith("chrome://")
+                        for t in targets
+                    )
+                    if has_new:
+                        self._sync_targets()
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.05)
         return result
 
     def close(self):
-        if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
-            self.target = None
+        targets = set(getattr(self, "owned_targets", []))
+        if getattr(self, "target", None):
+            targets.add(self.target)
+        for tid in targets:
+            try:
+                cdp("Target.closeTarget", targetId=tid)
+            except Exception:
+                pass
+        self.target = None
+        self.session = None
+        if hasattr(self, "owned_targets"):
+            self.owned_targets.clear()
+        if hasattr(self, "target_history"):
+            self.target_history.clear()
 
 
 def fingerprint(state):
@@ -146,9 +288,33 @@ def browser_operation(request):
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+
+              let ox = 0, oy = 0, frame = null;
+              let curr = e.ownerDocument;
+              while (curr && curr !== document) {
+                const f = curr.defaultView?.frameElement;
+                if (!f) break;
+                const fr = f.getBoundingClientRect();
+                ox += fr.x;
+                oy += fr.y;
+                if (!frame) frame = f;
+                curr = f.ownerDocument;
+              }
+
+              const r=e.getBoundingClientRect();
+              const x = ox + r.x + r.width / 2;
+              const y = oy + r.y + r.height / 2;
               if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+
+              if (frame) {
+                const topEl = document.elementFromPoint(x, y);
+                if (!topEl || (!frame.contains(topEl) && topEl !== frame)) return null;
+                const localHit = e.ownerDocument.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+                if (!localHit || !e.contains(localHit)) return null;
+              } else {
+                if (!e.contains(document.elementFromPoint(x,y))) return null;
+              }
+
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
