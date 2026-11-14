@@ -98,7 +98,21 @@ class Agent:
                 state["plan_index"] = int(selected == "DONE")
                 state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
                 return self.snapshot()
-            action = next(a for a in page["actions"] if a["id"] == selected)
+            expected_action = body.get("expected_action")
+            action = next((a for a in page["actions"] if a["id"] == selected), None)
+            if not action:
+                raise StalePage("Selected target changed since this decision. Choose again.")
+            if expected_action is not None:
+                fields = ("id", "kind", "label") if action.get("node") is None else (
+                    "node", "kind", "role", "label"
+                )
+                if action.get("kind") == "select":
+                    fields += ("value",)
+                if not isinstance(expected_action, dict) or any(
+                    key not in action or key not in expected_action or action[key] != expected_action[key]
+                    for key in fields
+                ):
+                    raise StalePage("Selected target changed since this decision. Choose again.")
             if len(state["history"]) >= MAX_STEPS:
                 state["status"] = "blocked"
                 raise ValueError(f"Stopped at the {MAX_STEPS}-action demo budget")

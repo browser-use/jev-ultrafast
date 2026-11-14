@@ -186,6 +186,155 @@ def test_stale_decision_is_consumed_before_any_mutation(runner):
     assert runner.state["decision"] is None
 
 
+@pytest.mark.parametrize(
+    "case",
+    [
+        (
+            {"id": "e1", "kind": "fill", "label": "Search", "role": "textbox", "value": "", "node": 10},
+            {"id": "e1", "kind": "click", "label": "Open Search", "role": "textbox", "value": "", "node": 10},
+            {"kind", "label"},
+        ),
+        (
+            {"id": "e1", "kind": "select", "label": "Team", "role": "combobox", "value": "a", "node": 10},
+            {"id": "e1", "kind": "select", "label": "Team", "role": "combobox", "value": "b", "node": 10},
+            {"value"},
+        ),
+        (
+            {"id": "e1", "kind": "click", "label": "Go", "role": "button", "value": "", "node": 20},
+            {"id": "e1", "kind": "click", "label": "Go", "role": "button", "value": "", "node": 99},
+            {"node"},
+        ),
+        # The no-node pairs model modified/corrupted snapshots to isolate each
+        # checked-command parser guard; they are not natural snapshot output.
+        (
+            {"id": "scroll_down", "kind": "scroll", "label": "Scroll"},
+            {"id": "scroll_up", "kind": "scroll", "label": "Scroll"},
+            {"id"},
+        ),
+        (
+            {"id": "control", "kind": "scroll", "label": "Control"},
+            {"id": "control", "kind": "wait", "label": "Control"},
+            {"kind"},
+        ),
+        (
+            {"id": "wait", "kind": "wait", "label": "Wait for the page"},
+            {"id": "wait", "kind": "wait", "label": "Pause for the page"},
+            {"label"},
+        ),
+    ],
+)
+def test_checked_act_rejects_identity_mismatch(runner, case):
+    expected, current, changed_fields = case
+    differences = {key for key in expected.keys() | current.keys() if expected.get(key) != current.get(key)}
+    assert differences == changed_fields
+
+    current_page = page()
+    current_page["actions"] = [current]
+    current_page["fingerprint"] = fingerprint(current_page)
+    runner.state["page"] = current_page
+    runner.state["decision"] = decision(current["id"])
+
+    with pytest.raises(StalePage):
+        runner.command(
+            "act",
+            {"fingerprint": current_page["fingerprint"], "expected_action": deepcopy(expected)},
+        )
+
+    runner.state["browser"].act.assert_not_called()
+    assert runner.state["decision"] is None
+
+
+def test_checked_act_rejects_missing_current_id(runner):
+    original_action = deepcopy(runner.state["page"]["actions"][2])
+    current_page = page()
+    current_page["actions"] = current_page["actions"][:2]
+    current_page["fingerprint"] = fingerprint(current_page)
+    runner.state["page"] = current_page
+    runner.state["decision"] = decision("e3")
+
+    with pytest.raises(StalePage):
+        runner.command(
+            "act",
+            {"fingerprint": current_page["fingerprint"], "expected_action": original_action},
+        )
+
+    runner.state["browser"].act.assert_not_called()
+    assert runner.state["decision"] is None
+
+
+def test_unchecked_act_rejects_missing_current_id(runner):
+    current_page = page()
+    current_page["actions"] = current_page["actions"][:2]
+    current_page["fingerprint"] = fingerprint(current_page)
+    runner.state["page"] = current_page
+    runner.state["decision"] = decision("e3")
+
+    with pytest.raises(StalePage):
+        runner.command("act", {"fingerprint": current_page["fingerprint"]})
+
+    runner.state["browser"].act.assert_not_called()
+    assert runner.state["decision"] is None
+
+
+def test_tick_reobserves_after_missing_selected_id(runner, monkeypatch):
+    current_page = page()
+    current_page["actions"] = current_page["actions"][:2]
+    current_page["fingerprint"] = fingerprint(current_page)
+    runner.state["page"] = current_page
+    runner.state["decision"] = None
+    runner.state["browser"].observe.return_value = current_page
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("e3")))
+
+    state = runner.command("tick")
+
+    assert state["status"] == "ready"
+    assert state["decision"] is None
+    runner.state["browser"].act.assert_not_called()
+    runner.state["browser"].observe.assert_called_once_with(screenshot=False)
+
+
+def test_checked_act_accepts_same_action_after_index_movement(runner):
+    original_page = {
+        **page(),
+        "actions": [
+            {"id": "e1", "kind": "fill", "label": "Search", "role": "textbox", "value": "", "node": 10},
+            {"id": "e2", "kind": "click", "label": "Open Search", "role": "textbox", "value": "", "node": 10},
+            {"id": "e3", "kind": "click", "label": "Go", "role": "button", "value": "", "node": 20},
+            {"id": "wait", "kind": "wait", "label": "Wait for the page to update"},
+        ],
+    }
+    original_page = {**original_page, "fingerprint": fingerprint(original_page)}
+    original_action = deepcopy(original_page["actions"][2])
+    current_page = {
+        **page(),
+        "actions": [
+            {"id": "e1", "kind": "click", "label": "Cancel", "role": "button", "value": "", "node": 30},
+            {"id": "e2", "kind": "click", "label": "Go", "role": "button", "value": "", "node": 20},
+            {"id": "e3", "kind": "click", "label": "Continue", "role": "button", "value": "", "node": 40},
+            {"id": "wait", "kind": "wait", "label": "Wait for the page to update"},
+        ],
+    }
+    current_page = {**current_page, "fingerprint": fingerprint(current_page)}
+    intended_action = current_page["actions"][1]
+    for observed_page in (original_page, current_page):
+        node_action_ids = [action["id"] for action in observed_page["actions"] if "node" in action]
+        assert node_action_ids == [f"e{index}" for index in range(1, len(node_action_ids) + 1)]
+        assert observed_page["actions"][-1] == {
+            "id": "wait", "kind": "wait", "label": "Wait for the page to update"
+        }
+    runner.state["page"] = current_page
+    runner.state["browser"].observe.return_value = current_page
+    runner.state["decision"] = {**decision("e2"), "operation": "CLICK", "target": "2"}
+
+    runner.command(
+        "act",
+        {"fingerprint": current_page["fingerprint"], "expected_action": original_action},
+    )
+
+    runner.state["browser"].act.assert_called_once_with(intended_action, current_page, text=None)
+    assert runner.state["browser"].act.call_args.args[0] != current_page["actions"][0]
+
+
 def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypatch):
     helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
     monkeypatch.setattr(loop, "field_text", helper)
