@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -12,6 +14,67 @@ from browser_harness.helpers import cdp
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+# A changed page counts as settled once the network has been quiet this long.
+SETTLE_S = 0.3
+# A navigation that started this long ago without a new document is treated as stalled, not in flight.
+NAVIGATION_GRACE_MS = 15000
+
+
+def wait_limits():
+    """(quiet timeout, hard cap), read when a WAIT runs so a .env loaded after import still applies: how long a
+    WAIT gives a quiet page to change, and how long it may wait while the page is busy."""
+    return _seconds("JEV_WAIT_TIMEOUT", 3), _seconds("JEV_WAIT_MAX", 15)
+
+
+def _seconds(name, default):
+    raw = os.environ.get(name, "").strip()
+    try:
+        value = float(raw) if raw else float(default)
+    except ValueError:
+        value = float("nan")
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a positive number of seconds, not {raw!r}")
+    return value
+
+
+# Whether this document or any frame it can read has requests in flight or a navigation under way.
+BUSY = f"""(() => {{
+  const busy = w => (w.__jevInflight || 0) > 0 ||
+    (!!w.__jevNavigating && Date.now() - w.__jevNavigating < {NAVIGATION_GRACE_MS});
+  const frames = [window];
+  for (let i = 0; i < frames.length; i++)
+    for (let j = 0; j < frames[i].frames.length; j++) {{
+      try {{ void frames[i].frames[j].document; frames.push(frames[i].frames[j]); }} catch (_) {{}}
+    }}
+  return frames.some(w => {{ try {{ return busy(w); }} catch (_) {{ return false; }} }});
+}})()"""
+
+
+# Counts the page's own fetch/XHR requests in flight, and marks a navigation that has started (a form submit,
+# a redirect) until the next document replaces this one, so WAIT can tell "loading" from "stuck".
+# A fetch counts until its promise settles, which is when the response headers arrive; a large body may still be
+# streaming. Counting body reads instead would leave the counter stuck whenever a page never reads a body, so this
+# accepts the earlier signal: WAIT still needs the page itself to change and stay quiet for SETTLE_S.
+TRACK_REQUESTS = """(() => {
+  if (window.__jevInflight !== undefined) return;
+  window.__jevInflight = 0;
+  const done = () => { window.__jevInflight = Math.max(0, window.__jevInflight - 1); };
+  const fetch = window.fetch;
+  if (fetch) window.fetch = function (...args) {
+    window.__jevInflight++;
+    try { return fetch.apply(this, args).finally(done); } catch (error) { done(); throw error; }
+  };
+  const send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (...args) {
+    window.__jevInflight++;
+    try {
+      this.addEventListener('loadend', done, {once: true});
+      return send.apply(this, args);
+    } catch (error) { done(); throw error; }
+  };
+  addEventListener('beforeunload', () => { window.__jevNavigating = Date.now(); });
+})()"""
+
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -25,6 +88,8 @@ class Browser:
         self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
         # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
+        self.call("Page.enable")
+        self.call("Page.addScriptToEvaluateOnNewDocument", source=TRACK_REQUESTS)
         self.call("Page.navigate", url=url)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
@@ -101,10 +166,52 @@ class Browser:
         if not self.fresh(page, action):
             raise StalePage("Page changed since this decision. Observe again.")
         if action["kind"] == "wait":
-            time.sleep(0.1)
+            self.wait_for_change(page)
         result = browser_operation({"operation": "act", "session": self.session, "action": action, "text": text})
         self.after_input = action if action["kind"] != "wait" else None
         return result
+
+    def busy(self):
+        """Requests in flight or a navigation under way, in this document or any same-origin frame, or a document
+        mid-replacement (evaluation fails). Cross-origin frames cannot be read from here and are not counted."""
+        try:
+            return bool(self.evaluate(BUSY))
+        except (StalePage, RuntimeError):
+            return True
+
+    def wait_for_change(self, page):
+        """Wait for the page to change and then settle, not a fixed tick: a slow login or a loading spinner
+        otherwise burns one model call per tick and looks like a stuck page, and the policy wanders off.
+
+        Returns once the page has changed and has neither changed again nor been busy for SETTLE_S; or, if nothing
+        changes, after JEV_WAIT_TIMEOUT of quiet. While busy it keeps waiting, up to JEV_WAIT_MAX. The cheap busy
+        check runs every 50 ms; the full-page comparison only every 250 ms.
+        """
+        timeout, cap = wait_limits()
+        started = time.monotonic()
+        quiet_since = settled_since = started
+        seen = page["marker"]
+        changed, next_look = False, started
+        while time.monotonic() - started < cap:
+            time.sleep(0.05)
+            now = time.monotonic()
+            if self.busy():
+                quiet_since = None
+                continue
+            quiet_since = quiet_since or now
+            if now >= next_look:
+                next_look = now + 0.25
+                try:
+                    marker = self.evaluate(MARKER)
+                except (StalePage, RuntimeError):
+                    marker = None
+                if marker != seen:
+                    # Every further change restarts the settle interval, so a late change is not returned mid-way.
+                    seen, settled_since, changed = marker, now, True
+            if changed and now - max(quiet_since, settled_since) >= SETTLE_S:
+                return
+            if not changed and now - quiet_since >= timeout:
+                return
 
     def close(self):
         if self.target:

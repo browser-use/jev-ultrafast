@@ -318,3 +318,20 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "nan", "inf", "soon"])
+def test_wait_limits_reject_values_that_would_break_every_wait(monkeypatch, raw):
+    from jev_ultrafast.browser import wait_limits
+
+    monkeypatch.setenv("JEV_WAIT_TIMEOUT", raw)
+    with pytest.raises(ValueError, match="JEV_WAIT_TIMEOUT must be a positive number"):
+        wait_limits()
+
+
+def test_wait_limits_default_and_read_at_call_time(monkeypatch):
+    from jev_ultrafast.browser import wait_limits
+
+    monkeypatch.delenv("JEV_WAIT_TIMEOUT", raising=False)
+    monkeypatch.setenv("JEV_WAIT_MAX", "20")
+    assert wait_limits() == (3.0, 20.0)
