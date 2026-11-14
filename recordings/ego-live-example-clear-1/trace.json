@@ -1,0 +1,118 @@
+{
+  "backend": "ego",
+  "decisions": [
+    {
+      "choice": "e1",
+      "confidence": 0.98,
+      "elapsed_ms": 1513,
+      "fingerprint": "9fd281b34373201d1cda67fa5a16a5924e0fb3fd797a99189adef375ccfce763",
+      "latency_ms": 1400,
+      "model": "jev-1.13.0",
+      "operation": "CLICK",
+      "operation_probabilities": {
+        "BLOCKED": 0.01,
+        "CLICK": 0.99,
+        "DONE": 0.0,
+        "WAIT": 0.0
+      },
+      "probabilities": {
+        "e1": 1.0
+      },
+      "target": "1",
+      "target_confidence": 1.0,
+      "target_probabilities": {
+        "1": 1.0
+      },
+      "usage": {
+        "input_tokens": 1114,
+        "output_tokens": 69
+      }
+    },
+    {
+      "choice": "DONE",
+      "confidence": 0.77,
+      "elapsed_ms": 2905,
+      "fingerprint": "d98b4327bea5745dc3e338f01d542eedade840aceed2ce05742f08ffa55ed3ec",
+      "latency_ms": 474,
+      "model": "jev-1.13.0",
+      "operation": "DONE",
+      "operation_probabilities": {
+        "BLOCKED": 0.1,
+        "CLICK": 0.07,
+        "DONE": 0.81,
+        "SCROLL_DOWN": 0.0,
+        "WAIT": 0.01
+      },
+      "probabilities": {
+        "DONE": 0.81
+      },
+      "target": null,
+      "target_confidence": null,
+      "target_probabilities": {},
+      "usage": {
+        "input_tokens": 3839,
+        "output_tokens": 294
+      }
+    }
+  ],
+  "history": [
+    {
+      "action": "Learn more",
+      "choice": "e1",
+      "confidence": 0.98,
+      "elapsed_ms": 2310,
+      "executed_ms": 2079,
+      "kind": "click",
+      "latency_ms": 1400,
+      "operation": "CLICK",
+      "page_changed": true,
+      "probability": 1.0,
+      "step": 1,
+      "target": "1",
+      "text_helper": null,
+      "text_latency_ms": 0,
+      "url": "https://www.iana.org/help/example-domains"
+    }
+  ],
+  "metrics": {
+    "action_success_rate": 1.0,
+    "actions_by_kind": {
+      "click": {
+        "attempted": 1,
+        "succeeded": 1
+      }
+    },
+    "backend": "ego",
+    "backend_cleanup_ms": 139,
+    "backend_operation_ms": 1268,
+    "backend_startup_ms": 1711,
+    "browser_actions_attempted": 1,
+    "browser_actions_succeeded": 1,
+    "ego_act_ms": 439,
+    "ego_average_act_ms": 439.0,
+    "ego_average_observe_ms": 155.0,
+    "ego_average_operation_ms": 172.25,
+    "ego_fresh_ms": 474,
+    "ego_max_operation_ms": 439,
+    "ego_max_single_operation_ms": 439,
+    "ego_observe_ms": 465,
+    "ego_operation_ms": 1378,
+    "ego_total_operation_ms": 1378,
+    "ego_wait_ms": 0,
+    "error_type": null,
+    "forced_kill": false,
+    "forced_terminate": false,
+    "graceful_exit": true,
+    "jev_calls": 2,
+    "jev_total_latency_ms": 1875,
+    "orphan_process_remaining": false,
+    "policy_elapsed_ms": 3026,
+    "runtime_spawn_count": 1,
+    "stale_count": 0,
+    "status": "done",
+    "text_helper_calls": 0,
+    "text_helper_total_ms": 0,
+    "wall_elapsed_ms": 4866
+  },
+  "status": "done"
+}

@@ -1,0 +1,66 @@
+{
+  "baseline_ego_nodejs": [],
+  "child_pid": 2956,
+  "close_error": null,
+  "final_state_status": "blocked",
+  "goal": "Find and open the Wikipedia article about Gödel's incompleteness theorems.",
+  "metrics": {
+    "action_success_rate": 0.25,
+    "actions_by_kind": {
+      "click": {
+        "attempted": 3,
+        "succeeded": 0
+      },
+      "fill": {
+        "attempted": 1,
+        "succeeded": 1
+      }
+    },
+    "backend": "ego",
+    "backend_cleanup_ms": 153,
+    "backend_operation_ms": 5926,
+    "backend_startup_ms": 2373,
+    "browser_actions_attempted": 4,
+    "browser_actions_succeeded": 1,
+    "ego_act_ms": 225,
+    "ego_average_act_ms": 225.0,
+    "ego_average_observe_ms": 676.857,
+    "ego_average_operation_ms": 358.647,
+    "ego_fresh_ms": 1134,
+    "ego_max_operation_ms": 1648,
+    "ego_max_single_operation_ms": 1648,
+    "ego_observe_ms": 4738,
+    "ego_operation_ms": 6097,
+    "ego_total_operation_ms": 6097,
+    "ego_wait_ms": 0,
+    "error_type": null,
+    "forced_kill": false,
+    "forced_terminate": false,
+    "graceful_exit": true,
+    "jev_calls": 4,
+    "jev_total_latency_ms": 3546,
+    "orphan_process_remaining": false,
+    "policy_elapsed_ms": 8922,
+    "runtime_spawn_count": 1,
+    "stale_count": 5,
+    "status": "blocked",
+    "text_helper_calls": 1,
+    "text_helper_total_ms": 1099,
+    "wall_elapsed_ms": 12960
+  },
+  "metrics_path": "recordings/ego-live-fixed-1/metrics.json",
+  "pid_alive_after_close": false,
+  "post_ego_nodejs": [],
+  "run_error": null,
+  "run_id": "ego-live-fixed-1",
+  "runner_elapsed_ms": 13401,
+  "runner_limit_seconds": 180,
+  "target_url": "https://en.wikipedia.org/wiki/Main_Page",
+  "trace_path": "recordings/ego-live-fixed-1/trace.json",
+  "verify_before_close": {
+    "source": "EgoBrowserBackend.observe before Agent.close",
+    "target_terms_present": false,
+    "title": "Wikipedia, the free encyclopedia",
+    "url": "https://en.wikipedia.org/wiki/Main_Page"
+  }
+}

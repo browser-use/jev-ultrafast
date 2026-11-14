@@ -1,0 +1,7 @@
+{
+  "child_pid": 6633,
+  "child_pid_alive_after_close": false,
+  "delayed_5s_ego_nodejs": [],
+  "delayed_post_check_note": "performed after original evidence capture; current snapshot",
+  "run_id": "ego-live-settled-1"
+}

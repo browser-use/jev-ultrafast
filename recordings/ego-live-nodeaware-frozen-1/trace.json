@@ -1,0 +1,76 @@
+{
+  "backend": "ego",
+  "decisions": [
+    {
+      "choice": "e2",
+      "confidence": 0.95,
+      "elapsed_ms": 1738,
+      "fingerprint": "aadb178c0c50b5db9ade5bf3f493a9011f4b226719731bceb3ac162f08b13c91",
+      "latency_ms": 1623,
+      "model": "jev-1.13.0",
+      "operation": "TYPE_TEXT",
+      "operation_probabilities": {
+        "BLOCKED": 0.0,
+        "CLICK": 0.04,
+        "DONE": 0.0,
+        "SCROLL_DOWN": 0.0,
+        "TYPE_TEXT": 0.96,
+        "WAIT": 0.0
+      },
+      "probabilities": {
+        "e2": 1.0
+      },
+      "target": "2",
+      "target_confidence": 1.0,
+      "target_probabilities": {
+        "2": 1.0
+      },
+      "usage": {
+        "input_tokens": 8341,
+        "output_tokens": 662
+      }
+    }
+  ],
+  "history": [],
+  "metrics": {
+    "action_success_rate": 0.0,
+    "actions_by_kind": {
+      "fill": {
+        "attempted": 1,
+        "succeeded": 0
+      }
+    },
+    "backend": "ego",
+    "backend_cleanup_ms": 165,
+    "backend_operation_ms": 2971,
+    "backend_startup_ms": 3313,
+    "browser_actions_attempted": 1,
+    "browser_actions_succeeded": 0,
+    "ego_act_ms": 343,
+    "ego_average_act_ms": 343.0,
+    "ego_average_observe_ms": 2237.0,
+    "ego_average_operation_ms": 591.2,
+    "ego_fresh_ms": 376,
+    "ego_max_operation_ms": 2237,
+    "ego_max_single_operation_ms": 2237,
+    "ego_observe_ms": 2237,
+    "ego_operation_ms": 2956,
+    "ego_total_operation_ms": 2956,
+    "ego_wait_ms": 0,
+    "error_type": "EgoRemoteError",
+    "forced_kill": false,
+    "forced_terminate": false,
+    "graceful_exit": true,
+    "jev_calls": 1,
+    "jev_total_latency_ms": 1623,
+    "orphan_process_remaining": false,
+    "policy_elapsed_ms": 3180,
+    "runtime_spawn_count": 1,
+    "stale_count": 0,
+    "status": "error",
+    "text_helper_calls": 1,
+    "text_helper_total_ms": 831,
+    "wall_elapsed_ms": 8747
+  },
+  "status": "error"
+}

@@ -1,0 +1,16 @@
+{
+  "run_id": "ego-live-20260922-run1",
+  "target_url": "https://en.wikipedia.org/wiki/Main_Page",
+  "goal": "Find and open the Wikipedia article about Gödel's incompleteness theorems.",
+  "child_pid": 97827,
+  "runner_pid": 97826,
+  "observed_child_command": "ego-browser nodejs",
+  "observed_child_runtime_before_signal": "at least 00:02:37",
+  "termination_signal": "SIGINT",
+  "termination_reason": "exceeded 3 minute live-run limit and did not return",
+  "post_termination_ego_nodejs_child": false,
+  "metrics_json_written": false,
+  "trace_json_written": false,
+  "failure_phase": "unknown; runner had not assigned Agent before SIGINT",
+  "raw_evidence_limit": "external process evidence preserved; no model/API response was emitted"
+}

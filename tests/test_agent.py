@@ -1,5 +1,6 @@
 """Offline contracts for a dynamic operation/target policy. No paid APIs."""
 
+import base64
 import json
 import time
 from copy import deepcopy
@@ -276,30 +277,60 @@ def test_fingerprint_tracks_values_and_identity_not_screenshots():
     assert fingerprint(p) != fingerprint(other)
 
 
-@pytest.mark.parametrize("changed", ["Departure", "Where from?", "Where to?", "year"])
-def test_flight_verification_rejects_wrong_trip(changed):
-    from examples.flights import verify
+def _flights_page(*, one_way=True, departure=None, origin="Z\u00fcrich", destination="London",
+                  path="/travel/flights"):
+    """A page shaped like the real one: the itinerary lives in the tfs payload."""
+    from examples import flights
 
-    actual = {
-        "url": "https://www.google.com/travel/flights/search?tfs=example",
-        "text": "Track prices from Zürich to London departing 2026-09-20",
-        "actions": [
-            {"label": k, "value": v}
-            for k, v in [
-                ("Change ticket type. One way", "One way"),
-                ("Where from?", "Zürich"),
-                ("Where to?", "London"),
-                ("Departure", "Sun, Sep 20"),
-                ("Nonstop flight on Sunday, September 20. Select flight", ""),
-            ]
-        ],
+    date = (departure or flights.DEPARTURE).isoformat().encode()
+    tail = b"\x98\x01\x02" if one_way else b"\x98\x01\x01"
+    payload = (
+        b"\x08\x1c\x10\x01\x1a(\x12\n" + date
+        + b"j\x0c\x08\x03\x12\x08/m/08966r\x0c\x08\x03\x12\x08/m/04jpl@\x01H\x01p\x01"
+        + tail
+    )
+    raw = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+    return {
+        "url": f"https://www.google.com{path}?tfs={raw}&hl=en",
+        "text": f"Cheap flights from {origin} to {destination}",
+        "actions": [{"label": "Nonstop flight. Select flight", "value": ""}],
     }
-    assert verify(actual)["passed"]
-    if changed == "year":
-        actual["text"] = actual["text"].replace("2026", "2027")
+
+
+@pytest.mark.parametrize("changed", ["one_way", "date", "origin", "destination", "site"])
+def test_flight_verification_rejects_wrong_trip(changed):
+    from datetime import timedelta
+
+    from examples import flights
+
+    actual = _flights_page()
+    result = flights.verify(actual)
+    assert result["passed"]
+    assert result["visible_flights"] == ["Nonstop flight. Select flight"]
+
+    if changed == "one_way":
+        actual = _flights_page(one_way=False)
+    elif changed == "date":
+        actual = _flights_page(departure=flights.DEPARTURE + timedelta(days=1))
+    elif changed == "origin":
+        actual = _flights_page(origin="Basel")
+    elif changed == "destination":
+        actual = _flights_page(destination="Paris")
     else:
-        next(a for a in actual["actions"] if a["label"] == changed)["value"] = "wrong"
-    assert not verify(actual)["passed"]
+        actual = _flights_page(path="/travel/hotels")
+    assert not flights.verify(actual)["passed"]
+
+
+def test_flight_verification_uses_a_future_departure_date():
+    """The example must stay runnable: a hardcoded date would age into the past."""
+    from datetime import date
+
+    from examples import flights
+
+    assert flights.DEPARTURE > date.today()
+    written = f"{flights.DEPARTURE:%B} {flights.DEPARTURE.day}, {flights.DEPARTURE:%Y}"
+    assert written in flights.GOALS  # the goal is natural language, the check is ISO
+    assert flights.verify(_flights_page())["passed"]
 
 
 @pytest.mark.parametrize(
@@ -318,3 +349,50 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_action_error_fails_closed_without_a_stale_retry(runner, monkeypatch):
+    from jev_ultrafast.backends.ego import EgoActionError
+
+    monkeypatch.setattr(loop, "field_text", Mock(return_value=("book", {"model": "test", "latency_ms": 1})))
+    runner.state["decision"] = decision("e3")
+    runner.state["browser"].act.side_effect = EgoActionError("page.click failed: element intercepts pointer events")
+    with pytest.raises(EgoActionError):
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["browser"].act.call_count == 1  # Never replayed.
+    assert runner.state["browser"].observe.call_count == 0
+    assert runner.state.get("stale_retries", 0) == 0
+    assert runner.state["history"] == []
+
+
+def test_stale_retry_fuse_still_blocks_after_the_limit(runner, monkeypatch):
+    from jev_ultrafast.questions import MAX_STALE_RETRIES
+
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("e3")))
+    runner.state["browser"].act.side_effect = StalePage("Page changed since this decision")
+    runner.state["browser"].observe.return_value = runner.state["page"]
+    for _ in range(MAX_STALE_RETRIES):
+        runner.state["decision"] = decision("e3")
+        runner.command("tick")
+    assert runner.state["status"] == "blocked"
+    assert runner.state["stale_retries"] == MAX_STALE_RETRIES
+    # The fuse stops the loop instead of replaying the mutation again.
+    assert runner.state["browser"].act.call_count == MAX_STALE_RETRIES
+
+
+def test_timeline_records_the_stale_lifecycle_and_the_fuse(runner, monkeypatch):
+    from jev_ultrafast.timeline import Timeline
+
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("e3")))
+    events = []
+    runner.timeline = Timeline(None)
+    runner.timeline.record = lambda event, **fields: events.append((event, fields))
+    runner.state["browser"].act.side_effect = StalePage("Page changed since this decision")
+    runner.state["browser"].observe.return_value = runner.state["page"]
+    for _ in range(3):
+        runner.state["decision"] = decision("e3")
+        runner.command("tick")
+    names = [event for event, _fields in events]
+    assert names.count("stale") == 3 and names.count("stale_retry") == 3
+    assert names[-1] == "fuse" and events[-1][1]["fuse"] == "max_stale_retries"
+    assert [fields["source"] for event, fields in events if event == "stale"] == ["act"] * 3

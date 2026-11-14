@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Travel Research Request — Jev Benchmark</title>
+<!--
+  Deterministic Jev capability benchmark.
+
+  A fixed page whose whole outcome is decidable from the DOM, so the agent's
+  operation judgment, target selection and probability output can be measured
+  without an external website changing underneath the run.
+
+  Required canonical path (9 decisions):
+    1 TYPE_TEXT  destination  "Zurich to London"
+    2 SELECT     category     Flights
+    3 CLICK      High priority
+    4 WAIT       Continue has not appeared yet (650 ms)
+    5 CLICK      Continue
+    6 SCROLL_DOWN           review section is below the fold
+    7 CLICK      Final Review
+    8 CLICK      Submit request
+    9 DONE
+
+  Distractors are deliberately tempting: a search box, a near-identical
+  "Save and continue", a "Continue without saving", a disabled checkout, and a
+  Reset form that really does clear the request.
+
+  Every durable fact is mirrored into <body> data-* attributes so an
+  independent validator can read the outcome with one DOM read. Those
+  attributes carry no visible text, so they never leak into the agent's
+  observation.
+-->
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 24px 48px;
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #16202b; background: #f4f6f9;
+  }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  header { padding: 20px 0 12px; border-bottom: 1px solid #d7dee8; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  section { background: #fff; border: 1px solid #d7dee8; border-radius: 10px; padding: 18px; margin-top: 18px; }
+  label.field { display: block; font-weight: 600; margin: 12px 0 4px; }
+  input[type="text"], input[type="search"], select {
+    width: 100%; max-width: 420px; padding: 9px 10px; font: inherit;
+    border: 1px solid #b6c1cf; border-radius: 7px; background: #fff;
+  }
+  button {
+    font: inherit; padding: 9px 14px; border: 1px solid #b6c1cf;
+    border-radius: 7px; background: #fff; cursor: pointer;
+  }
+  button.primary { background: #1b62d6; border-color: #1b62d6; color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  fieldset { border: 1px solid #d7dee8; border-radius: 8px; margin: 14px 0 0; padding: 10px 14px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  .radio { margin-right: 16px; font-weight: 400; }
+  #async-region { border-style: dashed; }
+  #async-status { margin: 0; color: #6a7686; }
+  /* One scroll step is 560 px, so this keeps the review section below the fold
+     at rest while putting "Final Review" comfortably inside the viewport after
+     exactly one scroll — the canonical path in the header comment. */
+  .spacer { height: 315px; }
+  #review { border-color: #1b62d6; }
+  dl { margin: 14px 0; }
+  dt { font-weight: 600; float: left; clear: left; width: 130px; }
+  dd { margin: 0 0 6px 140px; }
+  #review-note { color: #a3470f; min-height: 1.5em; }
+  #success { border-color: #1d8a4e; background: #eefaf2; }
+  #success strong { color: #14663a; }
+  footer { margin-top: 26px; color: #6a7686; font-size: 13px; }
+  footer a { color: #1b62d6; margin-right: 14px; }
+</style>
+</head>
+<body data-destination="" data-category="" data-priority="" data-continued="false"
+      data-reviewed="false" data-submitted="false" data-async-done="false"
+      data-scrolled="false" data-max-scroll="0" data-distractor-clicks="0">
+
+<header>
+  <h1>Travel Research Console</h1>
+  <div class="bar">
+    <label for="search">Search requests</label>
+    <input id="search" type="search" placeholder="Search requests" style="max-width:260px">
+    <button id="help" type="button">Help</button>
+    <button id="reset" type="button">Reset form</button>
+    <button id="save-draft" type="button">Save draft</button>
+    <button id="save-continue" type="button">Save and continue</button>
+  </div>
+</header>
+
+<main>
+  <section id="request">
+    <h2>New travel research request</h2>
+
+    <label class="field" for="destination">Destination city</label>
+    <input id="destination" type="text" placeholder="City or route" autocomplete="off">
+
+    <label class="field" for="category">Category</label>
+    <select id="category">
+      <option value="">Choose a category</option>
+      <option value="hotels">Hotels</option>
+      <option value="flights">Flights</option>
+      <option value="trains">Trains</option>
+    </select>
+
+    <fieldset>
+      <legend>Priority</legend>
+      <label class="radio"><input type="radio" name="priority" value="low"> Low</label>
+      <label class="radio"><input type="radio" name="priority" value="medium"> Medium</label>
+      <label class="radio"><input type="radio" name="priority" value="high"> High</label>
+    </fieldset>
+
+    <div class="bar" style="margin-top:16px">
+      <button id="express" type="button" disabled>Express checkout</button>
+      <button id="continue-unsaved" type="button">Continue without saving</button>
+      <button id="draft-review" type="button">Review draft</button>
+    </div>
+  </section>
+
+  <section id="async-region" aria-live="polite">
+    <h2>Availability</h2>
+    <p id="async-status">Choose a category to check availability.</p>
+    <div id="async-slot"></div>
+  </section>
+
+  <div class="spacer" aria-hidden="true"></div>
+
+  <section id="review">
+    <h2>Review and submit</h2>
+    <p id="review-hint">Finish the request above, then continue to review.</p>
+    <button id="final-review" type="button" disabled>Final Review</button>
+    <dl id="summary" hidden>
+      <dt>Destination</dt><dd id="summary-destination">—</dd>
+      <dt>Category</dt><dd id="summary-category">—</dd>
+      <dt>Priority</dt><dd id="summary-priority">—</dd>
+    </dl>
+    <p id="review-note"></p>
+    <button id="submit" class="primary" type="button" disabled>Submit request</button>
+  </section>
+
+  <section id="success" hidden>
+    <h2><strong>Request submitted</strong></h2>
+    <p id="success-detail"></p>
+  </section>
+</main>
+
+<footer>
+  <a id="privacy" href="#privacy-note">Privacy</a>
+  <a id="terms" href="#terms-note">Terms</a>
+  <span id="privacy-note">Privacy: this page stores nothing.</span>
+  <span id="terms-note">Terms: a local benchmark fixture.</span>
+</footer>
+
+<script>
+(() => {
+  const body = document.body;
+  const destination = document.getElementById('destination');
+  const category = document.getElementById('category');
+  const status = document.getElementById('async-status');
+  const slot = document.getElementById('async-slot');
+  const hint = document.getElementById('review-hint');
+  const finalReview = document.getElementById('final-review');
+  const summary = document.getElementById('summary');
+  const note = document.getElementById('review-note');
+  const submit = document.getElementById('submit');
+  const success = document.getElementById('success');
+  const ASYNC_DELAY_MS = 650;
+  const DISTRACTORS = ['search', 'help', 'reset', 'save-draft', 'save-continue',
+    'continue-unsaved', 'draft-review', 'express'];
+  let continued = false;
+  let reviewed = false;
+
+  const labels = { hotels: 'Hotels', flights: 'Flights', trains: 'Trains' };
+  const priorityLabels = { low: 'Low', medium: 'Medium', high: 'High' };
+  const checkedPriority = () => {
+    const picked = document.querySelector('input[name="priority"]:checked');
+    return picked ? picked.value : '';
+  };
+  const sync = () => {
+    body.dataset.destination = destination.value.trim();
+    body.dataset.category = category.value;
+    body.dataset.priority = checkedPriority();
+    body.dataset.continued = String(continued);
+    body.dataset.reviewed = String(reviewed);
+  };
+
+  destination.addEventListener('input', sync);
+  destination.addEventListener('change', sync);
+  for (const radio of document.querySelectorAll('input[name="priority"]')) {
+    radio.addEventListener('change', sync);
+  }
+
+  // The confirmation control is the deterministic asynchronous state: it only
+  // exists for the requested category, and only after ASYNC_DELAY_MS.
+  let timer = null;
+  category.addEventListener('change', () => {
+    sync();
+    if (timer) { clearTimeout(timer); timer = null; }
+    slot.replaceChildren();
+    body.dataset.asyncDone = 'false';
+    if (category.value !== 'flights') {
+      status.textContent = 'Choose a category to check availability.';
+      return;
+    }
+    status.textContent = 'Checking availability for Flights…';
+    timer = setTimeout(() => {
+      const button = document.createElement('button');
+      button.id = 'continue';
+      button.type = 'button';
+      button.className = 'primary';
+      button.textContent = 'Continue';
+      button.addEventListener('click', onContinue);
+      slot.replaceChildren(button);
+      status.textContent = 'Availability confirmed.';
+      body.dataset.asyncDone = 'true';
+    }, ASYNC_DELAY_MS);
+  });
+
+  const onContinue = () => {
+    continued = true;
+    sync();
+    hint.textContent = 'Request saved. The final review is below — scroll down to continue.';
+    finalReview.disabled = false;
+  };
+
+  finalReview.addEventListener('click', () => {
+    reviewed = true;
+    sync();
+    document.getElementById('summary-destination').textContent = destination.value.trim() || '—';
+    document.getElementById('summary-category').textContent = labels[category.value] || '—';
+    document.getElementById('summary-priority').textContent = priorityLabels[checkedPriority()] || '—';
+    summary.hidden = false;
+    hint.textContent = 'Check the summary, then submit.';
+    submit.disabled = false;
+  });
+
+  submit.addEventListener('click', () => {
+    if (!continued) { note.textContent = 'Continue the request before submitting.'; return; }
+    if (!reviewed) { note.textContent = 'Open the final review before submitting.'; return; }
+    if (!destination.value.trim() || !category.value || !checkedPriority()) {
+      note.textContent = 'Complete the destination, category, and priority before submitting.';
+      return;
+    }
+    note.textContent = '';
+    body.dataset.submitted = 'true';
+    document.getElementById('success-detail').textContent =
+      destination.value.trim() + ' · ' + (labels[category.value] || category.value) +
+      ' · ' + (priorityLabels[checkedPriority()] || checkedPriority()) + ' priority';
+    success.hidden = false;
+  });
+
+  // A real scroll is required: the review section starts below the viewport.
+  addEventListener('scroll', () => {
+    const y = Math.round(scrollY);
+    body.dataset.maxScroll = String(Math.max(Number(body.dataset.maxScroll) || 0, y));
+    if (y > 120) body.dataset.scrolled = 'true';
+  }, { passive: true });
+
+  // Counts clicks on the tempting-but-wrong controls, for the benchmark report.
+  for (const id of DISTRACTORS) {
+    const element = document.getElementById(id);
+    if (element) element.addEventListener('click', () => {
+      body.dataset.distractorClicks = String((Number(body.dataset.distractorClicks) || 0) + 1);
+    });
+  }
+
+  // Reset form really clears the request, so it is a costly distractor.
+  document.getElementById('reset').addEventListener('click', () => {
+    destination.value = '';
+    category.value = '';
+    for (const radio of document.querySelectorAll('input[name="priority"]')) radio.checked = false;
+    continued = false;
+    reviewed = false;
+    slot.replaceChildren();
+    status.textContent = 'Choose a category to check availability.';
+    body.dataset.asyncDone = 'false';
+    hint.textContent = 'Finish the request above, then continue to review.';
+    finalReview.disabled = true;
+    submit.disabled = true;
+    summary.hidden = true;
+    success.hidden = true;
+    note.textContent = '';
+    body.dataset.submitted = 'false';
+    sync();
+  });
+
+  sync();
+})();
+</script>
+</body>
+</html>

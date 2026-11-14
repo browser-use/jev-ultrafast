@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report Builder — Jev WAIT probe</title>
+<!--
+  PART B / WAIT live evidence: one deterministic asynchronous state. Starting
+  the build exposes no useful control until the fixed delay elapses, so the
+  only correct operation in between is WAIT. Nothing here needs a scroll.
+
+  The delay is deliberately longer than either backend's own post-action
+  settle: Ego waits for a mutated page to hold still (about 1.3 s) before it
+  decides again, so a shorter job would already be finished by the next
+  observation and the run would never have to choose WAIT.
+-->
+<style>
+  body { margin: 0; padding: 28px; font: 15px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+         color: #16202b; background: #f4f6f9; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  section { background: #fff; border: 1px solid #d7dee8; border-radius: 10px;
+            padding: 18px; margin-top: 18px; max-width: 660px; }
+  button { font: inherit; padding: 9px 14px; border: 1px solid #b6c1cf;
+           border-radius: 7px; background: #fff; cursor: pointer; margin-right: 8px; }
+  button.primary { background: #1b62d6; border-color: #1b62d6; color: #fff; font-weight: 600; }
+  #status { margin: 0; color: #6a7686; }
+  #result { border-color: #1d8a4e; background: #eefaf2; display: none; }
+  #result.on { display: block; }
+</style>
+</head>
+<body data-started="false" data-ready="false" data-downloaded="false" data-distractor-clicks="0">
+<h1>Report Builder</h1>
+<p style="color:#6a7686">Build the quarterly report, then download it.</p>
+
+<section>
+  <h2>Quarterly report</h2>
+  <p id="status">No report has been built yet.</p>
+  <p>
+    <button id="generate" class="primary" type="button">Generate report</button>
+    <button id="settings" type="button">Report settings</button>
+    <button id="history" type="button">Build history</button>
+  </p>
+  <div id="slot"></div>
+</section>
+
+<section id="result">
+  <strong>Report is ready.</strong>
+  <p id="result-detail">The quarterly report finished building.</p>
+</section>
+
+<script>
+(() => {
+  const DELAY_MS = 3500;
+  const body = document.body;
+  const status = document.getElementById('status');
+  const slot = document.getElementById('slot');
+  document.getElementById('generate').addEventListener('click', () => {
+    slot.replaceChildren();
+    body.dataset.started = 'true';
+    body.dataset.ready = 'false';
+    status.textContent = 'Building the quarterly report…';
+    setTimeout(() => {
+      const button = document.createElement('button');
+      button.id = 'download';
+      button.type = 'button';
+      button.textContent = 'Download report';
+      button.addEventListener('click', () => {
+        body.dataset.downloaded = 'true';
+        document.getElementById('result').classList.add('on');
+        status.textContent = 'Downloaded.';
+      });
+      slot.replaceChildren(button);
+      body.dataset.ready = 'true';
+      status.textContent = 'Build finished. The report can be downloaded.';
+    }, DELAY_MS);
+  });
+  for (const id of ['settings', 'history']) {
+    document.getElementById(id).addEventListener('click', () => {
+      body.dataset.distractorClicks = String((Number(body.dataset.distractorClicks) || 0) + 1);
+    });
+  }
+})();
+</script>
+</body>
+</html>

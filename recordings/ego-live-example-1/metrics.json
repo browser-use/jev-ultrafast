@@ -1,0 +1,40 @@
+{
+  "action_success_rate": 1.0,
+  "actions_by_kind": {
+    "click": {
+      "attempted": 3,
+      "succeeded": 3
+    }
+  },
+  "backend": "ego",
+  "backend_cleanup_ms": 149,
+  "backend_operation_ms": 7521,
+  "backend_startup_ms": 1116,
+  "browser_actions_attempted": 3,
+  "browser_actions_succeeded": 3,
+  "ego_act_ms": 4992,
+  "ego_average_act_ms": 1664.0,
+  "ego_average_observe_ms": 167.375,
+  "ego_average_operation_ms": 361.238,
+  "ego_fresh_ms": 1255,
+  "ego_max_operation_ms": 4107,
+  "ego_max_single_operation_ms": 4107,
+  "ego_observe_ms": 1339,
+  "ego_operation_ms": 7586,
+  "ego_total_operation_ms": 7586,
+  "ego_wait_ms": 0,
+  "error_type": null,
+  "forced_kill": false,
+  "forced_terminate": false,
+  "graceful_exit": true,
+  "jev_calls": 5,
+  "jev_total_latency_ms": 3300,
+  "orphan_process_remaining": false,
+  "policy_elapsed_ms": 10711,
+  "runtime_spawn_count": 1,
+  "stale_count": 1,
+  "status": "done",
+  "text_helper_calls": 0,
+  "text_helper_total_ms": 0,
+  "wall_elapsed_ms": 11950
+}

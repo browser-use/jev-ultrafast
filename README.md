@@ -35,7 +35,7 @@ Every observation produces a new element table:
 ...
 ```
 
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
+The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered. `WAIT` is a 800 ms action whose duration is carried by the observation, so both backends spend the same time on the same decision.
 
 ```text
                       one TypeSafe request
@@ -72,6 +72,18 @@ Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. T
 
 Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
 
+The default backend is the original Browser Harness session. To use Ego Browser for one task, install its `ego-browser` executable and select it explicitly:
+
+```bash
+uv run --env-file .env python examples/run.py \
+  --backend ego \
+  --url https://en.wikipedia.org/wiki/Main_Page \
+  --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.' \
+  --record-dir artifacts/ego-run
+```
+
+`ULTRAFAST_BROWSER_BACKEND=ego` is the equivalent environment setting. The explicit `--backend` value wins. Ego starts one task-scoped runtime, reuses it for every observation and action, and closes it when the `Agent` context exits. An Ego freshness check is a read-only probe of the decided target — page identity plus that node's trimmed guard, actionable and writable flags — so it never re-snapshots the page or rebuilds the action list; when the target is really gone the loop re-observes and decides again instead of replaying the mutation. A target Ego's snapshot gives no ref for is never offered as a choice, since choosing it could only burn a stale retry, and after a mutation the next observation waits (bounded and read-only) for the action set to hold still, so a decision is never made on a transitional frame. `metrics.json` contains wall and policy timings, Jev calls, action success, stale counts, and backend operation timings; `trace.json` omits raw model requests, usage payloads, typed values, and full page text. Startup checks report only whether credentials are configured. The V2 hardening report with its live-run evidence is in [V2_RELIABILITY_HARDENING_REPORT.md](V2_RELIABILITY_HARDENING_REPORT.md), and the Ego vs Chrome comparison is in [docs/final_backend_benchmark.md](docs/final_backend_benchmark.md).
+
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
 ## Use the original library
@@ -81,8 +93,9 @@ from jev_ultrafast import Agent
 
 with Agent(
     "https://www.google.com/travel/flights?hl=en",
-    "Find one-way flights from Zurich to London on September 20, 2026, "
-    "for one adult in economy. Stop when matching flight options are visible.",
+    "Find one-way flights from Zurich to London for one adult in economy, "
+    "departing on the first date the calendar offers. Stop once the search is "
+    "committed for that route and date.",
 ) as agent:
     for state in agent.run():
         print(state["elapsed_ms"], state["status"])
@@ -97,6 +110,42 @@ uv run --env-file .env python examples/run.py \
 ```
 
 `uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
+
+## Drive it from an MCP host
+
+`jev_ultrafast/mcp_server.py` is a stdio MCP server over the same agent. It uses
+the standard library only, so it adds no dependency, and it redirects everything
+the agent and its browser backend print to stderr: stdout carries protocol frames
+and nothing else. It reads the ignored `.env` itself, because an MCP host scrubs
+the environment it spawns children in.
+
+| Tool | Job |
+| --- | --- |
+| `run_goal` | One URL and one natural-language goal; returns status, executed steps, metrics, and an independent re-read of the final page. |
+| `browser_status` | Reports whether credentials and the backend are configured. Starts no browser and makes no paid call. |
+
+```bash
+python -m jev_ultrafast.mcp_server --print-tools   # the advertised surface
+python -m jev_ultrafast.mcp_server --check         # configuration only
+```
+
+Register it with any host that speaks MCP over stdio. For a DSH profile:
+
+```yaml
+- insert:
+    - id: mcp-jev-ultrafast
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio
+        serverName: jev-ultrafast
+        command: /absolute/path/to/jev-ultrafast/.venv/bin/python
+        args: [-m, jev_ultrafast.mcp_server]
+        cwd: /absolute/path/to/jev-ultrafast
+        toolCallTimeoutMs: 900000   # above run_goal's 180 s default budget
+        failOnStartupError: false
+```
+
+Tools then appear as `mcp__jev-ultrafast__run_goal` and `mcp__jev-ultrafast__browser_status`. Set `JEV_MCP_TRACE_PATH` to append every protocol frame to a JSONL file; entries carry the server pid, so sessions in one append-only file stay distinguishable. `browser_harness` (Chrome) remains the default backend, and a run still stops on `DONE`, `BLOCKED`, or its time budget. `scripts/mcp_client_run.py` is a minimal client for exercising the server and recording that trace.
 
 ## Why it moves
 
@@ -116,15 +165,18 @@ Every executed target is resolved from an observed node. The executor rechecks p
 | File | Job |
 | --- | --- |
 | [agent.py](jev_ultrafast/agent.py) | The complete loop and text-helper handoff |
-| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
+| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, action guards |
+| [probe.js](jev_ultrafast/probe.js) | Read-only freshness probe: page identity plus the target's trimmed guard, actionable and writable flags |
+| [timeline.py](jev_ultrafast/timeline.py) | Bounded, redacted JSONL execution timeline for the Ego loop |
 | [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
 | [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
 | [questions.py](jev_ultrafast/questions.py) | Model instructions |
 | [demo.py](jev_ultrafast/demo.py) | Local inspector |
+| [mcp_server.py](jev_ultrafast/mcp_server.py) | Stdio MCP server over the same loop |
 
 ## Evidence and limits
 
-The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
+The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. That run's own independent check verified the one-way setting, Zürich, London, its dated departure (September 20, 2026), and visible flight options. The shipped example derives the same check differently so it stays runnable: `examples/flights.py` asks for today + 21 days, reads the committed itinerary out of Google's `tfs` payload (the departure date, and the trip type as protobuf field 19), and reports the visible flights without requiring a particular date. The video plays at 1×, with no opening hold and a 0.5-second final hold.
 
 In six alternating runs with identical models and settings, both versions passed **3/3**. Median task time went from **9.450 s → 7.092 s**, a **25% reduction**; median browser protocol calls went from **1,092 → 101**. This is three repeats of one task on one browser profile, not a general reliability benchmark.
 

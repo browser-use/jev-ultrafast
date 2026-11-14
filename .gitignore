@@ -8,3 +8,14 @@ artifacts/
 *.egg-info/
 
 dist/
+
+# This round's live-run evidence stays on disk; the report cites the aggregate.
+recordings/v2/
+recordings/v2-*/
+# The final Ego vs Chrome benchmark is 19 MB of JSON and no images. The report
+# cites it by path and scripts/run_backend_benchmark.py re-records it, so the raw
+# runs stay on disk with the earlier rounds rather than in git history.
+recordings/final/
+recordings/final-smoke/
+recordings/final-smoke-flights/
+recordings/pre-final/

@@ -101,7 +101,10 @@
   actions.forEach((a,i)=>a.id='e'+(i+1));
   if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
-  actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
+  // One bounded, explicit wait duration, honored by both backends, so an
+  // asynchronous page costs the same decision either way.
+  actions.push({id:'wait',kind:'wait',label:'Wait for the page to update',wait_ms:800});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
+    epoch:performance.timeOrigin,
     scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
 })()

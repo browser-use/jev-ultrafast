@@ -1,0 +1,322 @@
+{
+  "backend": "ego",
+  "decisions": [
+    {
+      "choice": "e1",
+      "confidence": 0.96,
+      "elapsed_ms": 1529,
+      "fingerprint": "9fd281b34373201d1cda67fa5a16a5924e0fb3fd797a99189adef375ccfce763",
+      "latency_ms": 1416,
+      "model": "jev-1.13.0",
+      "operation": "CLICK",
+      "operation_probabilities": {
+        "BLOCKED": 0.02,
+        "CLICK": 0.98,
+        "DONE": 0.0,
+        "WAIT": 0.0
+      },
+      "probabilities": {
+        "e1": 1.0
+      },
+      "target": "1",
+      "target_confidence": 1.0,
+      "target_probabilities": {
+        "1": 1.0
+      },
+      "usage": {
+        "input_tokens": 1096,
+        "output_tokens": 69
+      }
+    },
+    {
+      "choice": "BLOCKED",
+      "confidence": 0.16,
+      "elapsed_ms": 6874,
+      "fingerprint": "0cf7cd66265b2e6d1371a031d9140b46960aafb183717cd094b120ab26a2b2e7",
+      "latency_ms": 454,
+      "model": "jev-1.13.0",
+      "operation": "BLOCKED",
+      "operation_probabilities": {
+        "BLOCKED": 0.37,
+        "CLICK": 0.31,
+        "DONE": 0.29,
+        "WAIT": 0.03
+      },
+      "probabilities": {
+        "BLOCKED": 0.37
+      },
+      "target": null,
+      "target_confidence": null,
+      "target_probabilities": {},
+      "usage": {
+        "input_tokens": 3991,
+        "output_tokens": 303
+      }
+    },
+    {
+      "choice": "e9",
+      "confidence": 0.16,
+      "elapsed_ms": 7689,
+      "fingerprint": "fd82f676fa51efb663aae5403fc192085e793b007e0b50c5e39ed4509db683ae",
+      "latency_ms": 456,
+      "model": "jev-1.13.0",
+      "operation": "CLICK",
+      "operation_probabilities": {
+        "BLOCKED": 0.36,
+        "CLICK": 0.37,
+        "DONE": 0.24,
+        "WAIT": 0.03
+      },
+      "probabilities": {
+        "e1": 0.01,
+        "e10": 0.0,
+        "e11": 0.0,
+        "e12": 0.0,
+        "e13": 0.0,
+        "e14": 0.01,
+        "e15": 0.0,
+        "e16": 0.0,
+        "e17": 0.0,
+        "e18": 0.0,
+        "e19": 0.0,
+        "e2": 0.0,
+        "e20": 0.0,
+        "e21": 0.0,
+        "e22": 0.24000000000000002,
+        "e23": 0.0,
+        "e24": 0.0,
+        "e25": 0.01,
+        "e26": 0.0,
+        "e27": 0.0,
+        "e28": 0.01,
+        "e29": 0.01,
+        "e3": 0.0,
+        "e30": 0.0,
+        "e31": 0.0,
+        "e4": 0.0,
+        "e5": 0.25,
+        "e6": 0.04,
+        "e7": 0.03,
+        "e8": 0.01,
+        "e9": 0.38
+      },
+      "target": "9",
+      "target_confidence": 0.35,
+      "target_probabilities": {
+        "1": 0.01,
+        "10": 0.0,
+        "11": 0.0,
+        "12": 0.0,
+        "13": 0.0,
+        "14": 0.01,
+        "15": 0.0,
+        "16": 0.0,
+        "17": 0.0,
+        "18": 0.0,
+        "19": 0.0,
+        "2": 0.0,
+        "20": 0.0,
+        "21": 0.0,
+        "22": 0.24000000000000002,
+        "23": 0.0,
+        "24": 0.0,
+        "25": 0.01,
+        "26": 0.0,
+        "27": 0.0,
+        "28": 0.01,
+        "29": 0.01,
+        "3": 0.0,
+        "30": 0.0,
+        "31": 0.0,
+        "4": 0.0,
+        "5": 0.25,
+        "6": 0.04,
+        "7": 0.03,
+        "8": 0.01,
+        "9": 0.38
+      },
+      "usage": {
+        "input_tokens": 3984,
+        "output_tokens": 301
+      }
+    },
+    {
+      "choice": "e5",
+      "confidence": 0.32,
+      "elapsed_ms": 9133,
+      "fingerprint": "996b34d9e066e5a6779f5857fb7c807af2a3ee8a715dff0347cf22ab6d5b241e",
+      "latency_ms": 478,
+      "model": "jev-1.13.0",
+      "operation": "CLICK",
+      "operation_probabilities": {
+        "BLOCKED": 0.21,
+        "CLICK": 0.45,
+        "DONE": 0.32,
+        "SCROLL_DOWN": 0.01,
+        "WAIT": 0.01
+      },
+      "probabilities": {
+        "e1": 0.03,
+        "e10": 0.0,
+        "e11": 0.0,
+        "e12": 0.0,
+        "e13": 0.0,
+        "e14": 0.0,
+        "e15": 0.0,
+        "e16": 0.03,
+        "e2": 0.0,
+        "e3": 0.0,
+        "e4": 0.0,
+        "e5": 0.89,
+        "e6": 0.03,
+        "e7": 0.0,
+        "e8": 0.01,
+        "e9": 0.01
+      },
+      "target": "5",
+      "target_confidence": 0.89,
+      "target_probabilities": {
+        "1": 0.03,
+        "10": 0.0,
+        "11": 0.0,
+        "12": 0.0,
+        "13": 0.0,
+        "14": 0.0,
+        "15": 0.0,
+        "16": 0.03,
+        "2": 0.0,
+        "3": 0.0,
+        "4": 0.0,
+        "5": 0.89,
+        "6": 0.03,
+        "7": 0.0,
+        "8": 0.01,
+        "9": 0.01
+      },
+      "usage": {
+        "input_tokens": 2858,
+        "output_tokens": 190
+      }
+    },
+    {
+      "choice": "DONE",
+      "confidence": 0.78,
+      "elapsed_ms": 10573,
+      "fingerprint": "c4c3defa2010468fa9c042e6f03c43d5e26ed08ea12ef6d4f30d7ca692cb6087",
+      "latency_ms": 494,
+      "model": "jev-1.13.0",
+      "operation": "DONE",
+      "operation_probabilities": {
+        "BLOCKED": 0.07,
+        "CLICK": 0.1,
+        "DONE": 0.82,
+        "SCROLL_DOWN": 0.0,
+        "WAIT": 0.01
+      },
+      "probabilities": {
+        "DONE": 0.82
+      },
+      "target": null,
+      "target_confidence": null,
+      "target_probabilities": {},
+      "usage": {
+        "input_tokens": 3113,
+        "output_tokens": 214
+      }
+    }
+  ],
+  "history": [
+    {
+      "action": "Learn more",
+      "choice": "e1",
+      "confidence": 0.96,
+      "elapsed_ms": 6292,
+      "executed_ms": 5765,
+      "kind": "click",
+      "latency_ms": 1416,
+      "operation": "CLICK",
+      "page_changed": true,
+      "probability": 1.0,
+      "step": 1,
+      "target": "1",
+      "text_helper": null,
+      "text_latency_ms": 0,
+      "url": "https://www.iana.org/help/example-domains"
+    },
+    {
+      "action": "IANA-managed Reserved Domains",
+      "choice": "e9",
+      "confidence": 0.16,
+      "elapsed_ms": 8491,
+      "executed_ms": 8249,
+      "kind": "click",
+      "latency_ms": 456,
+      "operation": "CLICK",
+      "page_changed": true,
+      "probability": 0.38,
+      "step": 2,
+      "target": "9",
+      "text_helper": null,
+      "text_latency_ms": 0,
+      "url": "https://www.iana.org/domains/reserved"
+    },
+    {
+      "action": "About",
+      "choice": "e5",
+      "confidence": 0.32,
+      "elapsed_ms": 9954,
+      "executed_ms": 9699,
+      "kind": "click",
+      "latency_ms": 478,
+      "operation": "CLICK",
+      "page_changed": true,
+      "probability": 0.89,
+      "step": 3,
+      "target": "5",
+      "text_helper": null,
+      "text_latency_ms": 0,
+      "url": "https://www.iana.org/about"
+    }
+  ],
+  "metrics": {
+    "action_success_rate": 1.0,
+    "actions_by_kind": {
+      "click": {
+        "attempted": 3,
+        "succeeded": 3
+      }
+    },
+    "backend": "ego",
+    "backend_cleanup_ms": 149,
+    "backend_operation_ms": 7521,
+    "backend_startup_ms": 1116,
+    "browser_actions_attempted": 3,
+    "browser_actions_succeeded": 3,
+    "ego_act_ms": 4992,
+    "ego_average_act_ms": 1664.0,
+    "ego_average_observe_ms": 167.375,
+    "ego_average_operation_ms": 361.238,
+    "ego_fresh_ms": 1255,
+    "ego_max_operation_ms": 4107,
+    "ego_max_single_operation_ms": 4107,
+    "ego_observe_ms": 1339,
+    "ego_operation_ms": 7586,
+    "ego_total_operation_ms": 7586,
+    "ego_wait_ms": 0,
+    "error_type": null,
+    "forced_kill": false,
+    "forced_terminate": false,
+    "graceful_exit": true,
+    "jev_calls": 5,
+    "jev_total_latency_ms": 3300,
+    "orphan_process_remaining": false,
+    "policy_elapsed_ms": 10711,
+    "runtime_spawn_count": 1,
+    "stale_count": 1,
+    "status": "done",
+    "text_helper_calls": 0,
+    "text_helper_total_ms": 0,
+    "wall_elapsed_ms": 11950
+  },
+  "status": "done"
+}

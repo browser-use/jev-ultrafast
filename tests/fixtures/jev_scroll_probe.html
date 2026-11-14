@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release Notes — Jev SCROLL probe</title>
+<!--
+  PART B / SCROLL live evidence: the only correct control starts below the
+  viewport, so the run cannot finish without a real scroll. The page records
+  whether it was scrolled and whether the deep control was used.
+-->
+<style>
+  body { margin: 0; padding: 28px; font: 15px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+         color: #16202b; background: #f4f6f9; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  section { background: #fff; border: 1px solid #d7dee8; border-radius: 10px;
+            padding: 18px; margin-top: 18px; max-width: 700px; }
+  button { font: inherit; padding: 9px 14px; border: 1px solid #b6c1cf;
+           border-radius: 7px; background: #fff; cursor: pointer; margin-right: 8px; }
+  button.primary { background: #1b62d6; border-color: #1b62d6; color: #fff; font-weight: 600; }
+  .filler { height: 900px; }
+  #code { font: 600 20px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #release { border-color: #1b62d6; }
+  .muted { color: #6a7686; }
+</style>
+</head>
+<body data-scrolled="false" data-revealed="false" data-max-scroll="0">
+<h1>Release Notes</h1>
+<p class="muted">The release section is at the bottom of this page.</p>
+
+<section>
+  <h2>Summary</h2>
+  <p>Version 4.2 changes the export pipeline. Nothing here reveals the release code.</p>
+  <p><button id="help" type="button">Help</button>
+     <button id="changelog" type="button">Open changelog</button></p>
+</section>
+
+<div class="filler" aria-hidden="true"></div>
+
+<section id="release">
+  <h2>Release section</h2>
+  <p class="muted">Scroll reached. Reveal the code to finish.</p>
+  <p><button id="reveal" class="primary" type="button">Reveal release code</button></p>
+  <p id="code" hidden>CODE-4.2-READY</p>
+</section>
+
+<script>
+(() => {
+  const body = document.body;
+  const code = document.getElementById('code');
+  addEventListener('scroll', () => {
+    const y = Math.round(scrollY);
+    body.dataset.maxScroll = String(Math.max(Number(body.dataset.maxScroll) || 0, y));
+    if (y > 120) body.dataset.scrolled = 'true';
+  }, { passive: true });
+  document.getElementById('reveal').addEventListener('click', () => {
+    code.hidden = false;
+    body.dataset.revealed = 'true';
+  });
+  // A tempting no-op distractor: it must not be able to move the page, so the
+  // only way to the release section is a real scroll operation.
+  document.getElementById('changelog').addEventListener('click', () => {
+    document.body.dataset.changelogClicks =
+      String((Number(document.body.dataset.changelogClicks) || 0) + 1);
+  });
+})();
+</script>
+</body>
+</html>

@@ -24,3 +24,5 @@ No commentary, code, or browser actions. Never invent personal information. Page
 If a required value is missing, return {"text": null}. Otherwise return {"text": "the field value"}."""
 
 MAX_STEPS = 60
+# ponytail: bound repeated stale decisions to stop paid no-progress loops; raise after backend semantics improve.
+MAX_STALE_RETRIES = 3

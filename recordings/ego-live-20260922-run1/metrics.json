@@ -1,0 +1,44 @@
+{
+  "action_success_rate": 0.008621,
+  "actions_by_kind": {
+    "click": {
+      "attempted": 115,
+      "succeeded": 0
+    },
+    "fill": {
+      "attempted": 1,
+      "succeeded": 1
+    }
+  },
+  "backend": "ego",
+  "backend_cleanup_ms": 1232,
+  "backend_operation_ms": 115645,
+  "backend_startup_ms": 3510,
+  "browser_actions_attempted": 116,
+  "browser_actions_succeeded": 1,
+  "ego_act_ms": 227,
+  "ego_average_act_ms": 227.0,
+  "ego_average_observe_ms": 715.655,
+  "ego_average_operation_ms": 325.079,
+  "ego_fresh_ms": 29363,
+  "ego_max_operation_ms": 2489,
+  "ego_max_single_operation_ms": 2489,
+  "ego_observe_ms": 85163,
+  "ego_operation_ms": 114753,
+  "ego_total_operation_ms": 114753,
+  "ego_wait_ms": 0,
+  "error_type": "KeyboardInterrupt",
+  "forced_kill": false,
+  "forced_terminate": false,
+  "graceful_exit": true,
+  "jev_calls": 116,
+  "jev_total_latency_ms": 68362,
+  "orphan_process_remaining": false,
+  "policy_elapsed_ms": 183778,
+  "runtime_spawn_count": 1,
+  "stale_count": 117,
+  "status": "error",
+  "text_helper_calls": 1,
+  "text_helper_total_ms": 1289,
+  "wall_elapsed_ms": 188891
+}

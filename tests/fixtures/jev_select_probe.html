@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipping Preference — Jev SELECT probe</title>
+<!--
+  PART B / SELECT live evidence: a native <select> plus a plausible second
+  combobox, so the operation must be SELECT and the target must be the right
+  control. The page records the applied value for an independent validator.
+-->
+<style>
+  body { margin: 0; padding: 28px; font: 15px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+         color: #16202b; background: #f4f6f9; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  section { background: #fff; border: 1px solid #d7dee8; border-radius: 10px;
+            padding: 18px; margin-top: 18px; max-width: 640px; }
+  label.field { display: block; font-weight: 600; margin: 14px 0 4px; }
+  select, button { font: inherit; padding: 9px 10px; border: 1px solid #b6c1cf;
+                   border-radius: 7px; background: #fff; }
+  select { width: 100%; max-width: 340px; }
+  button { cursor: pointer; }
+  #confirmation { border-color: #1d8a4e; background: #eefaf2; display: none; }
+  #confirmation.on { display: block; }
+  .muted { color: #6a7686; }
+</style>
+</head>
+<body data-carrier="" data-packaging="" data-confirmed="false">
+<h1>Shipping Preference</h1>
+<p class="muted">Set how this order travels.</p>
+
+<section>
+  <label class="field" for="carrier">Shipping carrier speed</label>
+  <select id="carrier">
+    <option value="">Select a speed</option>
+    <option value="standard">Standard (5 days)</option>
+    <option value="express">Express (2 days)</option>
+    <option value="overnight">Overnight (next morning)</option>
+  </select>
+
+  <label class="field" for="packaging">Packaging</label>
+  <select id="packaging">
+    <option value="">Select packaging</option>
+    <option value="box">Cardboard box</option>
+    <option value="envelope">Padded envelope</option>
+    <option value="crate">Wooden crate</option>
+  </select>
+
+  <p class="bar" style="margin-top:18px">
+    <button id="clear" type="button">Clear selection</button>
+    <button id="quote" type="button">Get quote</button>
+  </p>
+</section>
+
+<section id="confirmation">
+  <strong>Carrier set to Overnight (next morning).</strong>
+  <p id="confirmation-detail">Next-morning delivery is selected.</p>
+</section>
+
+<script>
+(() => {
+  const body = document.body;
+  const carrier = document.getElementById('carrier');
+  const packaging = document.getElementById('packaging');
+  const confirmation = document.getElementById('confirmation');
+  const sync = () => {
+    body.dataset.carrier = carrier.value;
+    body.dataset.packaging = packaging.value;
+    const done = carrier.value === 'overnight';
+    body.dataset.confirmed = String(done);
+    confirmation.classList.toggle('on', done);
+  };
+  carrier.addEventListener('change', sync);
+  packaging.addEventListener('change', sync);
+  document.getElementById('clear').addEventListener('click', () => {
+    carrier.value = ''; packaging.value = ''; sync();
+  });
+  sync();
+})();
+</script>
+</body>
+</html>

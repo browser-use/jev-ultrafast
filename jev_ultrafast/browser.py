@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,24 @@ MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
+
+
+def create_backend(url, backend=None):
+    """Construct one task-scoped backend; Ego is imported only when selected."""
+    if hasattr(backend, "observe"):
+        return backend
+    selected = str(backend or os.environ.get("ULTRAFAST_BROWSER_BACKEND") or "browser_harness").strip().lower()
+    if selected in {"browser", "harness", "browser_harness"}:
+        return Browser(url)
+    if selected == "ego":
+        try:
+            from .backends.ego import EgoBrowserBackend
+        except ImportError as error:
+            raise RuntimeError(
+                "Ego backend is unavailable; install ego-browser before selecting backend=ego."
+            ) from error
+        return EgoBrowserBackend(url)
+    raise ValueError(f"Unknown browser backend: {selected!r}")
 
 
 class Browser:
@@ -101,7 +120,10 @@ class Browser:
         if not self.fresh(page, action):
             raise StalePage("Page changed since this decision. Observe again.")
         if action["kind"] == "wait":
-            time.sleep(0.1)
+            # The wait action carries its own bounded duration (snapshot.js), the
+            # same one the Ego bridge reads, so an asynchronous page costs the
+            # same decision on either backend.
+            time.sleep(min(max(action.get("wait_ms") or 800, 50), 3000) / 1000)
         result = browser_operation({"operation": "act", "session": self.session, "action": action, "text": text})
         self.after_input = action if action["kind"] != "wait" else None
         return result
