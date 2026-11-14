@@ -27,10 +27,36 @@ class Browser:
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
         self.call("Page.navigate", url=url)
         deadline = time.monotonic() + 15
+        last_count = -1
+        stable_since = None
         while time.monotonic() < deadline:
-            if self.evaluate("document.readyState") == "complete":
-                break
-            time.sleep(0.02)
+            info = self.evaluate("""(() => {
+                if (document.readyState !== 'complete') return { ready: false, frames: 0, count: 0 };
+                const frames = document.querySelectorAll('iframe, frame');
+                let count = document.querySelectorAll('*').length;
+                let framesLoading = false;
+                for (const f of frames) {
+                    try {
+                        if (f.contentDocument) {
+                            if (f.contentDocument.readyState !== 'complete') framesLoading = true;
+                            count += f.contentDocument.querySelectorAll('*').length;
+                        }
+                    } catch (e) {}
+                }
+                return { ready: !framesLoading, frames: frames.length, count };
+            })()""")
+            if info and info.get("ready"):
+                if info.get("frames", 0) == 0:
+                    break
+                curr_count = info.get("count", 0)
+                now = time.monotonic()
+                if curr_count == last_count and curr_count > 30:
+                    if stable_since and (now - stable_since) >= 0.35:
+                        break
+                else:
+                    last_count = curr_count
+                    stable_since = now
+            time.sleep(0.05)
 
     def call(self, method, **params):
         return cdp(method, session_id=self.session, **params)
@@ -108,7 +134,10 @@ class Browser:
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
+            try:
+                cdp("Target.closeTarget", targetId=self.target)
+            except Exception:
+                pass
             self.target = None
 
 
@@ -146,9 +175,33 @@ def browser_operation(request):
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-              const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+
+              let ox = 0, oy = 0, frame = null;
+              let curr = e.ownerDocument;
+              while (curr && curr !== document) {
+                const f = curr.defaultView?.frameElement;
+                if (!f) break;
+                const fr = f.getBoundingClientRect();
+                ox += fr.x;
+                oy += fr.y;
+                if (!frame) frame = f;
+                curr = f.ownerDocument;
+              }
+
+              const r=e.getBoundingClientRect();
+              const x = ox + r.x + r.width / 2;
+              const y = oy + r.y + r.height / 2;
               if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+
+              if (frame) {
+                const topEl = document.elementFromPoint(x, y);
+                if (!topEl || (!frame.contains(topEl) && topEl !== frame)) return null;
+                const localHit = e.ownerDocument.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+                if (!localHit || !e.contains(localHit)) return null;
+              } else {
+                if (!e.contains(document.elementFromPoint(x,y))) return null;
+              }
+
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;
