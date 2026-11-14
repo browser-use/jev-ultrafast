@@ -163,9 +163,19 @@ def field_text(context):
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    # Providers spell the reasoning control differently, and an unrecognised key is
+    # a hard 400 rather than a warning, so send exactly one shape per provider.
+    mode = os.environ.get("TEXT_MODEL_REASONING")
+    if mode == "omit":
+        reasoning = {}  # Gemini rejects any reasoning field: 400 Unknown name "reasoning".
+    elif mode == "effort":
+        reasoning = {"reasoning_effort": "low"}  # OpenAI chat completions takes a string.
+    elif mode == "none":
+        reasoning = {"reasoning": {"enabled": False}}  # OpenRouter extension.
+    elif "api.deepseek.com/" in base:
+        reasoning = {"thinking": {"type": "disabled"}}
+    else:
+        reasoning = {"reasoning": {"effort": "low"}}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
