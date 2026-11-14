@@ -157,15 +157,25 @@ def field_context(goal, action, page, history):
     }
 
 
+def reasoning_payload(base):
+    """Each OpenAI-compatible endpoint spells the reasoning switch differently."""
+    gemini = "generativelanguage.googleapis.com" in base
+    if os.environ.get("TEXT_MODEL_REASONING") == "none":
+        return {"reasoning_effort": "none"} if gemini else {"reasoning": {"enabled": False}}
+    if gemini:
+        return {"reasoning_effort": "low"}
+    if "api.deepseek.com/" in base:
+        return {"thinking": {"type": "disabled"}}
+    return {"reasoning": {"effort": "low"}}
+
+
 def field_text(context):
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key:
         raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    reasoning = reasoning_payload(base)
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",

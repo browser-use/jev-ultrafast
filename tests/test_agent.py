@@ -151,6 +151,21 @@ def test_quoted_task_text_still_uses_the_llm(monkeypatch):
     assert sent["goal"] == 'Fly from "Zurich" to London'
 
 
+def test_each_endpoint_gets_its_own_reasoning_switch(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
+    assert model.reasoning_payload("https://generativelanguage.googleapis.com/v1beta/openai") == {
+        "reasoning_effort": "none"
+    }
+    assert model.reasoning_payload("https://api.deepseek.com/v1") == {"reasoning": {"enabled": False}}
+    assert model.reasoning_payload("https://openrouter.ai/api/v1") == {"reasoning": {"enabled": False}}
+    monkeypatch.delenv("TEXT_MODEL_REASONING")
+    assert model.reasoning_payload("https://api.deepseek.com/v1") == {"thinking": {"type": "disabled"}}
+    assert model.reasoning_payload("https://generativelanguage.googleapis.com/v1beta/openai") == {
+        "reasoning_effort": "low"
+    }
+    assert model.reasoning_payload("https://openrouter.ai/api/v1") == {"reasoning": {"effort": "low"}}
+
+
 def test_missing_text_credential_stops_before_guessing(monkeypatch):
     monkeypatch.delenv("TEXT_MODEL_API_KEY", raising=False)
     with pytest.raises(ValueError, match="TEXT_MODEL_API_KEY"):
