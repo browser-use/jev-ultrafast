@@ -18,7 +18,7 @@ Freshness compares semantic state instead of counting DOM mutations. Before a cl
 
 Browser mutations are not retried by transport recovery. Completed execution is logged before the next observation, including when that observation encounters a navigation. An interrupted native-select evaluation stops because its change event may already have fired. Typing uses a browser select-all command followed by CDP text insertion, so existing input contents are replaced.
 
-The next observation waits for up to two animation frames or 50 ms after an interaction. Editable ARIA comboboxes instead wait for visible options, capped at 200 ms. This avoids paying for a prediction before autocomplete suggestions arrive. An explicit WAIT remains 100 ms; network loading is never fast-forwarded in the recording.
+The next observation waits for the page to settle after an interaction. Editable ARIA comboboxes wait for visible options, capped at 200 ms; other inputs wait for strong busy signals (the acted control disabled, `aria-busy`, a visible progress) to clear plus a 400 ms marker quiet window, capped at 8 s, and an input that produces nothing observable returns on a fast path (~100 ms). This avoids paying for a prediction before the page has produced the state the next decision needs. An explicit WAIT remains 100 ms; network loading is never fast-forwarded in the recording.
 
 ## What changed after the first demo
 
