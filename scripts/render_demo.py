@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import statistics
 import subprocess
 from pathlib import Path
@@ -40,6 +41,8 @@ steps = [
     ("20 September", "Done. Search"),
     ("Search flights", "Search"),
 ]
+crop_w = int(os.environ.get("VIEWPORT_WIDTH", 1120))
+crop_h = int(os.environ.get("VIEWPORT_HEIGHT", 780))
 for i in range(round((end + 500) * 30 / 1000)):
     t = min(end, round(i * 1000 / 30))
     screenshot = next(im for ts, im in reversed(frames) if ts <= t)
@@ -56,7 +59,7 @@ for i in range(round((end + 500) * 30 / 1000)):
         d.ellipse((54 + j * 19, 205, 63 + j * 19, 214), fill=c)
     d.text((145, 201), "google.com/travel/flights", font=mono(13), fill="#d4d6d5")
     # Omit Google account controls in every frame. No content from the task area is redrawn.
-    canvas.paste(screenshot.crop((0, 64, 1120, 780)), (36, 226))
+    canvas.paste(screenshot.crop((0, 64, crop_w, crop_h)), (36, 226))
     d.text((1192, 206), "JEV ULTRAFAST", font=font(16, True), fill=green)
     d.text((1189, 242), f"{t / 1000:05.2f}", font=mono(52), fill=ink)
     d.text((1193, 307), "SECONDS ELAPSED", font=font(13, True), fill=muted)

@@ -48,7 +48,14 @@ def capture():
         errors.append(str(e))
 
 
-agent.browser.call("Page.startScreencast", format="jpeg", quality=80, maxWidth=1120, maxHeight=780, everyNthFrame=2)
+agent.browser.call(
+    "Page.startScreencast",
+    format="jpeg",
+    quality=80,
+    maxWidth=agent.browser.width,
+    maxHeight=agent.browser.height,
+    everyNthFrame=2,
+)
 worker = threading.Thread(target=capture, daemon=True)
 worker.start()
 # The first prediction starts the run timer; this anchors video timestamps to it.

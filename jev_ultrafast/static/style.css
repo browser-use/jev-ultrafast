@@ -277,7 +277,7 @@ a:focus-visible {
 }
 .viewport {
   position: relative;
-  aspect-ratio: 1120/780;
+  aspect-ratio: var(--viewport-ratio, 1120/780);
   background: #fdfdfb;
   overflow: hidden;
 }

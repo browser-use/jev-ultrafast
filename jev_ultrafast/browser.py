@@ -2,12 +2,44 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
+
+
+def _viewport_dimension(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    try:
+        value = int(raw) if raw is not None else default
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from None
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer, got {value}")
+    return value
+
+
+def viewport_dimensions() -> tuple[int, int]:
+    return (
+        _viewport_dimension("VIEWPORT_WIDTH", 1120),
+        _viewport_dimension("VIEWPORT_HEIGHT", 780),
+    )
+
+
+def __getattr__(name: str):
+    if name == "VIEWPORT_WIDTH":
+        return _viewport_dimension("VIEWPORT_WIDTH", 1120)
+    if name == "VIEWPORT_HEIGHT":
+        return _viewport_dimension("VIEWPORT_HEIGHT", 780)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return list(globals().keys()) + ["VIEWPORT_WIDTH", "VIEWPORT_HEIGHT"]
+
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
@@ -22,7 +54,16 @@ class Browser:
         ensure_daemon()
         self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
-        self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
+        width, height = viewport_dimensions()
+        self.width = width
+        self.height = height
+        self.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=width,
+            height=height,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
         # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
         self.call("Page.navigate", url=url)
@@ -136,7 +177,15 @@ def browser_operation(request):
         action = request["action"]
         kind = action["kind"]
         if kind == "scroll":
-            call("Input.dispatchMouseEvent", type="mouseWheel", x=550, y=650, deltaX=0, deltaY=action["delta"])
+            width, height = viewport_dimensions()
+            call(
+                "Input.dispatchMouseEvent",
+                type="mouseWheel",
+                x=width // 2,
+                y=height // 2,
+                deltaX=0,
+                deltaY=action["delta"],
+            )
         elif kind != "wait":
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")

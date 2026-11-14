@@ -318,3 +318,111 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_viewport_dimension_validation(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    assert browser._viewport_dimension("TEST_VP", 800) == 800
+
+    monkeypatch.setenv("TEST_VP", "1280")
+    assert browser._viewport_dimension("TEST_VP", 800) == 1280
+
+    monkeypatch.setenv("TEST_VP", "invalid")
+    with pytest.raises(ValueError, match="TEST_VP must be an integer, got 'invalid'"):
+        browser._viewport_dimension("TEST_VP", 800)
+
+    monkeypatch.setenv("TEST_VP", "")
+    with pytest.raises(ValueError, match="TEST_VP must be an integer, got ''"):
+        browser._viewport_dimension("TEST_VP", 800)
+
+    monkeypatch.setenv("TEST_VP", "0")
+    with pytest.raises(ValueError, match="TEST_VP must be a positive integer, got 0"):
+        browser._viewport_dimension("TEST_VP", 800)
+
+    monkeypatch.setenv("TEST_VP", "-50")
+    with pytest.raises(ValueError, match="TEST_VP must be a positive integer, got -50"):
+        browser._viewport_dimension("TEST_VP", 800)
+
+
+def test_scroll_dispatches_at_center_of_viewport(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    calls = []
+
+    def fake_cdp(method, session_id=None, **params):
+        calls.append((method, params))
+        return {}
+
+    monkeypatch.setattr(browser, "cdp", fake_cdp)
+    res = browser.browser_operation({
+        "operation": "act",
+        "session": "test-session",
+        "action": {"id": "s1", "kind": "scroll", "delta": 300},
+    })
+    assert res == {"executed": "s1"}
+    assert len(calls) == 1
+    method, params = calls[0]
+    assert method == "Input.dispatchMouseEvent"
+    assert params["type"] == "mouseWheel"
+    assert params["x"] == browser.VIEWPORT_WIDTH // 2
+    assert params["y"] == browser.VIEWPORT_HEIGHT // 2
+    assert params["deltaY"] == 300
+
+
+def test_browser_initialization_uses_configured_viewport(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    monkeypatch.setenv("VIEWPORT_WIDTH", "1920")
+    monkeypatch.setenv("VIEWPORT_HEIGHT", "1080")
+
+    calls = []
+
+    def fake_cdp(method, session_id=None, **params):
+        calls.append((method, params))
+        if method == "Target.createTarget":
+            return {"targetId": "target-1"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "session-1"}
+        if method == "Runtime.evaluate":
+            return {"result": {"value": "complete"}}
+        return {}
+
+    monkeypatch.setattr(browser, "ensure_daemon", lambda: None)
+    monkeypatch.setattr(browser, "cdp", fake_cdp)
+
+    b = browser.Browser("https://example.com")
+    assert b.session == "session-1"
+    assert b.width == 1920
+    assert b.height == 1080
+
+    override = next(params for method, params in calls if method == "Emulation.setDeviceMetricsOverride")
+    assert override["width"] == 1920
+    assert override["height"] == 1080
+
+
+def test_viewport_dimensions_dynamic_and_reload(monkeypatch):
+    import importlib
+
+    import jev_ultrafast.browser as browser
+
+    monkeypatch.setenv("VIEWPORT_WIDTH", "1280")
+    monkeypatch.setenv("VIEWPORT_HEIGHT", "720")
+
+    assert browser.viewport_dimensions() == (1280, 720)
+    assert browser.VIEWPORT_WIDTH == 1280
+    assert browser.VIEWPORT_HEIGHT == 720
+
+    reloaded = importlib.reload(browser)
+    assert reloaded.viewport_dimensions() == (1280, 720)
+    assert reloaded.VIEWPORT_WIDTH == 1280
+    assert reloaded.VIEWPORT_HEIGHT == 720
+
+    monkeypatch.delenv("VIEWPORT_WIDTH", raising=False)
+    monkeypatch.delenv("VIEWPORT_HEIGHT", raising=False)
+    importlib.reload(browser)
+    assert browser.viewport_dimensions() == (1120, 780)
+    assert browser.VIEWPORT_WIDTH == 1120
+    assert browser.VIEWPORT_HEIGHT == 780
+
+
