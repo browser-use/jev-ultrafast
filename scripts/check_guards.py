@@ -13,6 +13,47 @@ HTML = """<!doctype html><title>Guard checks</title>
 <select aria-label="Category"><option>All</option><option>Design</option></select>
 <p id="outside">Unrelated offscreen text</p>"""
 
+SEGMENTED = """<!doctype html><title>Segmented controls</title><style>body{margin:30px}</style>
+<label>Appointment date<input id="d" type="date"></label>
+<label>Appointment time<input id="t" type="time"></label>
+<label>Start month<input id="m" type="month"></label>
+<label>Note<input id="n" type="text"></label>"""
+
+
+def check_segmented_controls():
+    """Date and time controls are readable targets, take ISO values, and refuse anything else."""
+    browser = Browser("data:text/html," + quote(SEGMENTED))
+    passed = []
+    fields = (("Appointment date", "#d", "2026-10-20"), ("Appointment time", "#t", "09:15"),
+              ("Start month", "#m", "2027-03"), ("Note", "#n", "still plain text"))
+    try:
+        page = browser.observe(screenshot=False)
+        labels = {a["label"] for a in page["actions"] if a["kind"] == "fill"}
+        assert {name for name, _, _ in fields} <= labels, sorted(labels)
+        # The native calendar is browser UI, so an "Open ..." click would be a dead end.
+        assert not any(a["label"].startswith("Open Appointment") for a in page["actions"])
+        passed.append("segmented controls are fillable targets and offer no dead-end popup click")
+
+        for label, selector, value in fields:
+            page = browser.observe(screenshot=False)
+            action = next(a for a in page["actions"] if a["kind"] == "fill" and a["label"] == label)
+            browser.act(action, page, text=value)
+            actual = browser.evaluate(f"document.querySelector('{selector}').value")
+            assert actual == value, f"{label}: {actual!r}"
+        passed.append("segmented controls keep the ISO value; plain text input is unchanged")
+
+        page = browser.observe(screenshot=False)
+        action = next(a for a in page["actions"] if a["kind"] == "fill" and a["label"] == "Appointment date")
+        try:
+            browser.act(action, page, text="October 20 2026")
+        except RuntimeError:
+            passed.append("a value the control rejects raises instead of clearing the field silently")
+        else:
+            raise AssertionError("An unparseable date must not be reported as entered")
+    finally:
+        browser.close()
+    return passed
+
 
 def main():
     browser = Browser("data:text/html," + quote(HTML))
@@ -129,6 +170,7 @@ def main():
         passed.append("navigation invalidates the old document")
     finally:
         browser.close()
+    passed += check_segmented_controls()
     print("\n".join(passed))
     print(f"PASS: {len(passed)} browser guard checks; no model calls")
 

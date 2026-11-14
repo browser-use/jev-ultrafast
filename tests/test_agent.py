@@ -267,6 +267,61 @@ def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, r
     assert cdp.call_count == 1
 
 
+def segmented_cdp(itype, assigned):
+    """Resolve the target as `itype`, then report what the control kept after assignment."""
+
+    def respond(method, **params):
+        if method != "Runtime.evaluate":
+            return {}
+        if "getBoundingClientRect" in params["expression"]:
+            return {"result": {"value": {"x": 5, "y": 6, "itype": itype}}}
+        return {"result": {"value": assigned}}
+
+    return Mock(side_effect=respond)
+
+
+def fill_request(text="2026-10-20"):
+    return {
+        "operation": "act",
+        "session": "test",
+        "text": text,
+        "action": {"id": "e1", "kind": "fill", "node": 10},
+    }
+
+
+@pytest.mark.parametrize("itype", ["date", "time", "datetime-local", "month", "week"])
+def test_segmented_control_is_assigned_instead_of_typed(monkeypatch, itype):
+    import jev_ultrafast.browser as browser
+
+    # Chrome renders these as segmented spinners; Input.insertText never reaches them.
+    cdp = segmented_cdp(itype, "2026-10-20")
+    monkeypatch.setattr(browser, "cdp", cdp)
+    assert browser_operation(fill_request()) == {"executed": "e1"}
+    methods = [call.args[0] for call in cdp.call_args_list]
+    assert "Input.insertText" not in methods
+    assert methods.count("Runtime.evaluate") == 2
+    assert "2026-10-20" in cdp.call_args_list[-1].kwargs["expression"]
+
+
+def test_segmented_control_rejecting_the_value_stops_the_action(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    # An unparseable value leaves the control empty; that must not be reported as entered.
+    monkeypatch.setattr(browser, "cdp", segmented_cdp("date", ""))
+    with pytest.raises(RuntimeError, match="date field rejected"):
+        browser_operation(fill_request("October 20 2026"))
+
+
+def test_plain_text_control_still_receives_real_keystrokes(monkeypatch):
+    import jev_ultrafast.browser as browser
+
+    cdp = segmented_cdp("text", "")
+    monkeypatch.setattr(browser, "cdp", cdp)
+    assert browser_operation(fill_request("Zurich")) == {"executed": "e1"}
+    methods = [call.args[0] for call in cdp.call_args_list]
+    assert "Input.insertText" in methods
+
+
 def test_fingerprint_tracks_values_and_identity_not_screenshots():
     p = page()
     other = deepcopy(p)

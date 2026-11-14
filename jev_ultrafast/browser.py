@@ -12,6 +12,8 @@ from browser_harness.helpers import cdp
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+# Chrome renders these as segmented spinners; they ignore inserted text and take an ISO value.
+SEGMENTED_INPUTS = {"time", "date", "datetime-local", "month", "week"}
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -156,7 +158,7 @@ def browser_operation(request):
                 e.dispatchEvent(new Event('input',{bubbles:true}));
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
-              return {x,y};
+              return {x,y,itype:e.tagName==='INPUT'?e.type:''};
             })(""" + json.dumps(action) + ")")
             if target is None:
                 if kind == "select":
@@ -166,7 +168,23 @@ def browser_operation(request):
                 x, y = target["x"], target["y"]
                 for event in ("mousePressed", "mouseReleased"):
                     call("Input.dispatchMouseEvent", type=event, x=x, y=y, button="left", clickCount=1)
-                if kind == "fill":
+                if kind == "fill" and target["itype"] in SEGMENTED_INPUTS:
+                    # Assign the observed node's value like a dropdown; the text stays a JSON argument.
+                    assigned = evaluate(
+                        """(request => {
+                          const e=window.__jevFast?.nodes.get(request.node);
+                          if (!e?.isConnected) return null;
+                          e.value=request.text;
+                          e.dispatchEvent(new Event('input',{bubbles:true}));
+                          e.dispatchEvent(new Event('change',{bubbles:true}));
+                          return e.value;
+                        })("""
+                        + json.dumps({"node": action["node"], "text": request["text"]})
+                        + ")"
+                    )
+                    if assigned != request["text"]:
+                        raise RuntimeError(f"The {target['itype']} field rejected the value; nothing was entered.")
+                elif kind == "fill":
                     call(
                         "Input.dispatchKeyEvent",
                         type="keyDown",
