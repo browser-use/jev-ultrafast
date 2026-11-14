@@ -318,3 +318,65 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def start(monkeypatch, fail_at, error=RuntimeError("start failed"), on_close=None):
+    """Drive Browser.__init__ to a failure and report the CDP methods it called."""
+    import jev_ultrafast.browser as browser
+
+    calls = []
+
+    def cdp(method, **params):
+        calls.append(method)
+        if method == fail_at:
+            raise error
+        if method == "Target.closeTarget" and on_close:
+            raise on_close
+        return {"targetId": "T-1", "sessionId": "S-1"}
+
+    monkeypatch.setattr(browser, "ensure_daemon", lambda: None)
+    monkeypatch.setattr(browser, "cdp", cdp)
+    return browser.Browser, calls
+
+
+@pytest.mark.parametrize(
+    "fail_at",
+    [
+        "Target.attachToTarget",
+        "Emulation.setDeviceMetricsOverride",
+        "Emulation.setFocusEmulationEnabled",
+        "Page.navigate",
+        "Runtime.evaluate",
+    ],
+)
+def test_a_failed_start_closes_the_tab_it_opened(monkeypatch, fail_at):
+    """The tab outlives the error otherwise: no caller ever receives the Browser that owns it."""
+    Browser, calls = start(monkeypatch, fail_at)
+    with pytest.raises(RuntimeError):
+        Browser("https://example.test/")
+    assert calls[-1] == "Target.closeTarget"
+
+
+def test_an_interrupt_during_the_readiness_wait_closes_the_tab(monkeypatch):
+    """That wait runs for up to fifteen seconds, which is long enough to be interrupted."""
+    Browser, calls = start(monkeypatch, "Runtime.evaluate", error=KeyboardInterrupt())
+    with pytest.raises(KeyboardInterrupt):
+        Browser("https://example.test/")
+    assert calls[-1] == "Target.closeTarget"
+
+
+def test_a_failed_close_does_not_replace_the_error_that_caused_it(monkeypatch):
+    Browser, _ = start(
+        monkeypatch, "Page.navigate", error=RuntimeError("bad URL"), on_close=RuntimeError("tab already gone")
+    )
+    with pytest.raises(RuntimeError, match="bad URL") as caught:
+        Browser("https://example.test/")
+    assert any("tab already gone" in note for note in caught.value.__notes__)
+
+
+def test_an_interrupt_while_closing_does_not_replace_the_original_error(monkeypatch):
+    Browser, _ = start(
+        monkeypatch, "Page.navigate", error=RuntimeError("bad URL"), on_close=KeyboardInterrupt()
+    )
+    with pytest.raises(RuntimeError, match="bad URL"):
+        Browser("https://example.test/")

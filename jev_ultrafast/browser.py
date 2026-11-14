@@ -21,16 +21,29 @@ class Browser:
     def __init__(self, url):
         ensure_daemon()
         self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
-        self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
-        self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
-        # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
-        self.call("Emulation.setFocusEmulationEnabled", enabled=True)
-        self.call("Page.navigate", url=url)
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if self.evaluate("document.readyState") == "complete":
-                break
-            time.sleep(0.02)
+        # The tab exists from here on, and no caller holds this object yet. Whatever fails
+        # below -- a refused attach, a malformed URL, Ctrl-C during the readiness wait --
+        # this is the only place that can still close it instead of orphaning it in Chrome.
+        try:
+            self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
+            self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
+            # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
+            self.call("Emulation.setFocusEmulationEnabled", enabled=True)
+            self.call("Page.navigate", url=url)
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if self.evaluate("document.readyState") == "complete":
+                    break
+                time.sleep(0.02)
+        except BaseException as error:
+            # Nothing that goes wrong while closing may replace the error the caller needs
+            # to see, including a second interrupt landing during the close itself. A tab
+            # that could not be closed is still worth knowing about, so it rides along.
+            try:
+                self.close()
+            except BaseException as cleanup:
+                error.add_note(f"The browser tab this run opened may still be open: {cleanup!r}")
+            raise
 
     def call(self, method, **params):
         return cdp(method, session_id=self.session, **params)
