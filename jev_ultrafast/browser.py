@@ -10,7 +10,7 @@ from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
+READ_STATE = Path(__file__).with_name("snapshot.js").read_text(encoding="utf-8")
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
 
 class StalePage(ValueError):
@@ -107,9 +107,13 @@ class Browser:
         return result
 
     def close(self):
-        if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
-            self.target = None
+        target, self.target = self.target, None
+        if target:
+            try:
+                cdp("Target.closeTarget", targetId=target)
+            except RuntimeError as error:
+                if "No target with given id found" not in str(error):
+                    raise  # Real close failure must not be masked.
 
 
 def fingerprint(state):
