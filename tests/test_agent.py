@@ -45,6 +45,15 @@ def decision(action="e1"):
     }
 
 
+def test_invalid_json_response_reports_no_action(monkeypatch):
+    response = Mock(status_code=200, is_error=False)
+    response.json.side_effect = ValueError("not json")
+    monkeypatch.setattr(model.CLIENT, "post", Mock(return_value=response))
+
+    with pytest.raises(RuntimeError, match="invalid JSON; no action executed"):
+        model.post_json("https://example.test/v1", "test", {})
+
+
 @pytest.mark.parametrize("mutation", ["unknown", "nan", "missing", "negative", "non_max", "confidence"])
 def test_invalid_choice_is_rejected(mutation):
     a = choice(["a", "b"], "a")
