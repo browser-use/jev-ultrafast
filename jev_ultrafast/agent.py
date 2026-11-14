@@ -44,9 +44,11 @@ class Agent:
             (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
 
     def snapshot(self):
+        page = self.state.get("page")
+        elements = action_space(page["actions"])[0] if page and "actions" in page else []
         return {
             **{k: v for k, v in self.state.items() if k != "browser"},
-            "elements": action_space(self.state["page"]["actions"])[0],
+            "elements": elements,
         }
 
     def command(self, name, body=None):
