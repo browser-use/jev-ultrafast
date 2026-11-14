@@ -135,7 +135,12 @@ def browser_operation(request):
     if operation == "act":
         action = request["action"]
         kind = action["kind"]
-        if kind == "scroll":
+        if kind == "scroll" and type(action.get("reveal")) is int:
+            # Code-owned reveal of an observed out-of-view field. Wheel events get swallowed by embedded maps.
+            evaluate("(id => { const e=window.__jevFast?.nodes.get(id); "
+                     "if (e?.isConnected) e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'}); })("
+                     + str(action["reveal"]) + ")")
+        elif kind == "scroll":
             call("Input.dispatchMouseEvent", type="mouseWheel", x=550, y=650, deltaX=0, deltaY=action["delta"])
         elif kind != "wait":
             if type(action["node"]) is not int:
@@ -148,7 +153,11 @@ def browser_operation(request):
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
               const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
               if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-              if (!e.contains(document.elementFromPoint(x,y))) return null;
+              const top=document.elementFromPoint(x,y);
+              // Styled checkboxes/radios sit under their own label's decoration; clicking it still toggles them.
+              const own=top && (e.contains(top) || [...(e.labels||[])].some(l=>l.contains(top)) ||
+                (top.closest('label')?.contains(e) ?? false));
+              if (!own) return null;
               if (action.kind==='select') {
                 if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
                     !o.disabled && !o.closest('optgroup[disabled]'))) return null;

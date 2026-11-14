@@ -124,6 +124,42 @@ def main():
         assert value == "Generated", repr(value)
         assert any(a.get("role") == "option" for a in page["actions"])
         passed.append("real text input waits for asynchronous combobox suggestions")
+        # Real contact pages put the form under a hero: only the first field is in view at load.
+        browser.evaluate("document.body.innerHTML=" + repr("""
+          <form><label>Name <input id="name"></label>
+          <div style="height:1600px"></div>
+          <label>Email <input id="email" type="email" required></label><br>
+          <label style="position:relative;display:inline-block;height:24px">
+            <input id="opt" type="checkbox" style="position:absolute;left:0;top:0;width:20px;height:20px;opacity:.01">
+            <span style="position:absolute;left:0;top:0;width:20px;height:20px;background:#ccc"></span>
+            <span style="padding-left:28px">Battery</span></label></form>
+        """) + "; scrollTo(0,0)")
+        page = browser.observe(screenshot=False)
+        outside = {f["label"]: f for f in page["out_of_view"]}
+        assert outside["Email"]["direction"] == "below" and outside["Email"]["required"] is True
+        assert not any(a["label"] == "Email" for a in page["actions"])
+        scroll = next(a for a in page["actions"] if a["id"] == "scroll_down")
+        browser.act({**scroll, "reveal": outside["Email"]["node"]}, page)
+        page = browser.observe(screenshot=False)
+        assert any(a["label"] == "Email" and a["kind"] == "fill" for a in page["actions"])
+        assert not any(f["label"] == "Email" for f in page["out_of_view"])
+        passed.append("an out-of-view field is reported as a fact, then revealed by one code-owned scroll")
+
+        box = next(a for a in page["actions"] if a.get("role") == "checkbox")
+        assert box["label"] == "Battery" and box["rect"]["covered"] is False
+        browser.act(box, page)
+        assert browser.evaluate("document.querySelector('#opt').checked") is True
+        passed.append("a checkbox under its own label's decoration is reachable")
+
+        page = browser.observe(screenshot=False)
+        browser.evaluate("const banner=document.createElement('div'); "
+                         "banner.style.cssText='position:fixed;inset:0;z-index:9999;background:white'; "
+                         "document.body.append(banner)")
+        assert browser.fresh(page), "Cover is geometry and must not invalidate a decision"
+        page = browser.observe(screenshot=False)
+        assert all(a["rect"]["covered"] for a in page["actions"] if "node" in a)
+        passed.append("elements under an unrelated overlay are flagged covered without changing freshness")
+
         browser.call("Page.navigate", url="about:blank")
         assert not browser.fresh(page, field)
         passed.append("navigation invalidates the old document")

@@ -102,8 +102,10 @@ uv run --env-file .env python examples/run.py \
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
 - **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
-- **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
-- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
+- **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes. Form fields scrolled out of view are reported as facts (label, value, direction), never as targets.
+- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input. A control under its own label's decoration counts as reachable; anything else that is covered is withheld from the model.
+- **Give every target head a way out.** Each target question includes `none`. When the selected head answers `none`, or picks the field that was typed a moment ago, code scrolls the nearest still-empty out-of-view field to the centre instead of typing again. Operation and target heads cannot see each other's answers, so code composes them.
+- **A missing value is a skip, not a guess.** If the text helper finds no value for a field, the step is logged as `skip` and that field is no longer offered.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
 - **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
 - **Send visible text.** Offscreen article bodies and footers do not fill the model context.

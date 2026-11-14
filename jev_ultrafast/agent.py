@@ -110,7 +110,24 @@ class Agent:
                 if self.pending_text and self.pending_text[0] == context:
                     _, text, helper = self.pending_text
                 else:
-                    text, helper = field_text(context)
+                    try:
+                        text, helper = field_text(context)
+                    except ValueError:
+                        # The goal holds no value for this field. Record that fact and move on; never invent one.
+                        state["history"].append({
+                            "step": len(state["history"]) + 1, "action": action["label"], "kind": "skip",
+                            "choice": selected, "probability": decision["probabilities"][selected],
+                            "confidence": decision["confidence"], "latency_ms": decision["latency_ms"],
+                            "text": None, "text_helper": None, "text_latency_ms": 0,
+                            "operation": decision["operation"], "target": decision["target"],
+                            "note": "No value for this field in the goal; left empty. Do not choose it again.",
+                            "page_changed": True, "url": page["url"], "usage": decision["usage"],
+                            "executed_ms": round((time.perf_counter() - state["started_at"]) * 1000),
+                            "elapsed_ms": state["elapsed_ms"],
+                        })
+                        skips = [h for h in state["history"][-3:] if h["kind"] == "skip"]
+                        state["status"] = "blocked" if len(skips) == 3 else "ready"
+                        return self.snapshot()
                     self.pending_text = (context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
@@ -132,6 +149,7 @@ class Agent:
                     "text_latency_ms": helper["latency_ms"] if helper else 0,
                     "operation": decision["operation"],
                     "target": decision["target"],
+                    "reveal": action.get("reveal"),
                     "page_changed": None,
                     "url": page["url"],
                     "usage": decision["usage"],

@@ -83,7 +83,7 @@ def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
             "model": "test",
             "answers": {
                 "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
-                "type_text_target": choice(["1"], "1"),
+                "type_text_target": choice(["1", "none"], "1"),
                 "click_target": {"choice": "invented"},
             },
         }
@@ -318,3 +318,90 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def _fill_page():
+    p = page()
+    p["actions"] = [
+        {"id": "e1", "kind": "fill", "label": "Name", "node": 1, "role": "textbox", "value": "Ada"},
+        {"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560},
+        {"id": "wait", "kind": "wait", "label": "Wait for the page to update"},
+    ]
+    p["out_of_view"] = [
+        {"node": 7, "role": "textbox", "label": "Email", "value": "", "required": True,
+         "direction": "below", "distance": 22},
+        {"node": 9, "role": "textbox", "label": "Message", "value": "", "required": True,
+         "direction": "below", "distance": 182},
+    ]
+    return p
+
+
+def test_no_match_target_becomes_a_reveal_of_the_nearest_empty_field(monkeypatch):
+    def post(_url, _key, body):
+        assert body["state"]["fields_out_of_view"][0]["label"] == "Email"
+        assert "none" in body["questions"]["type_text_target"]["criteria"]
+        assert "Email (empty)" in body["questions"]["operation"]["criteria"]["SCROLL_DOWN"]
+        return {"model": "test", "answers": {
+            "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
+            "type_text_target": choice(["1", "none"], "none"),
+        }}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    p = _fill_page()
+    d = model.choose(p, "Fill the form", [])
+    assert d["composed"] == "SCROLL_DOWN" and d["choice"] == "scroll_down" and d["target"] is None
+    assert next(a for a in p["actions"] if a["id"] == "scroll_down")["reveal"] == 7
+
+
+def test_retyping_the_value_just_typed_becomes_a_reveal(monkeypatch):
+    def post(_url, _key, body):
+        return {"model": "test", "answers": {
+            "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
+            "type_text_target": choice(["1", "none"], "1"),
+        }}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    history = [{"kind": "fill", "choice": "e1", "text": "Ada", "action": "Name", "page_changed": True}]
+    d = model.choose(_fill_page(), "Fill the form", history)
+    assert d["composed"] == "SCROLL_DOWN" and d["choice"] == "scroll_down"
+    # a first fill of an empty field is never overridden
+    fresh = _fill_page()
+    fresh["actions"][0]["value"] = ""
+    assert model.choose(fresh, "Fill the form", [])["choice"] == "e1"
+
+
+def test_covered_elements_are_facts_not_candidates(monkeypatch):
+    def post(_url, _key, body):
+        criteria = body["questions"]["type_text_target"]["criteria"]
+        assert set(criteria) == {"1", "none"} and "Name" in criteria["1"]["element"]
+        assert body["state"]["elements_covered_by_an_overlay"] == ["Email"]
+        assert [e["label"] for e in body["state"]["elements"]] == ["Name"]
+        return {"model": "test", "answers": {
+            "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
+            "type_text_target": choice(["1", "none"], "1"),
+        }}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    p = _fill_page()
+    p["actions"][0]["value"] = ""
+    p["actions"].insert(1, {"id": "e2", "kind": "fill", "label": "Email", "node": 2, "role": "textbox",
+                            "value": "", "rect": {"x": 0, "y": 0, "w": 9, "h": 9, "covered": True}})
+    assert model.choose(p, "Fill the form", [])["choice"] == "e1"
+
+
+def test_a_skipped_field_is_no_longer_offered(monkeypatch):
+    def post(_url, _key, body):
+        assert "type_text_target" not in body["questions"]
+        assert body["state"]["recent_actions"][-1]["kind"] == "skip"
+        return {"model": "test", "answers": {
+            "operation": choice(body["questions"]["operation"]["criteria"], "SCROLL_DOWN"),
+        }}
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    history = [{"kind": "skip", "action": "Name", "choice": "e1", "text": None, "note": "No value"}]
+    d = model.choose(_fill_page(), "Fill the form", history)
+    assert d["choice"] == "scroll_down"

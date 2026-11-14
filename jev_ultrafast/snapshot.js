@@ -58,8 +58,13 @@
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
+    // Same hit test the executor applies. Cover is geometry, so it lives in `rect`, which freshness ignores:
+    // a moving element must not invalidate a decision. Python keeps covered elements away from the model.
+    const topmost=document.elementFromPoint(x,y);
+    const reachable=!!topmost && (e.contains(topmost) || [...(e.labels||[])].some(l=>l.contains(topmost)) ||
+      (topmost.closest('label')?.contains(e) ?? false));
     const base={node:identity(e),role:rname,label:name(e)||rname,
-      rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+      rect:{x:r.x,y:r.y,w:r.width,h:r.height,covered:!reachable}};
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;
@@ -79,6 +84,19 @@
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
   }
+  // Form controls that exist but are scrolled out of view. Facts for the model; never directly actionable.
+  const out_of_view=[];
+  for (const e of document.querySelectorAll('input,textarea,select')) {
+    if (!safe(e) || !visible(e) || e.matches(':disabled') || ['submit','button','reset','image'].includes(e.type)) continue;
+    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+    if (r.width<=0 || r.height<=0 || (x>=0 && y>=0 && x<innerWidth && y<innerHeight)) continue;
+    const toggle=['checkbox','radio'].includes(e.type);
+    out_of_view.push({node:identity(e),role:role(e)||e.type,label:name(e)||e.getAttribute('name')||e.type,
+      value:toggle ? (e.checked?'checked':'') : e.tagName==='SELECT' ? [...e.selectedOptions].map(o=>o.label).join(', ') : String(e.value||''),
+      required:e.required||e.getAttribute('aria-required')==='true',direction:y<0?'above':'below',
+      distance:Math.round(y<0 ? -y : y-innerHeight)});
+  }
+  out_of_view.sort((a,b)=>a.distance-b.distance); out_of_view.splice(40);
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   const range=document.createRange(); let node,length=0;
   while ((node=walker.nextNode()) && length<6000) {
@@ -103,5 +121,5 @@
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
-    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
+    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions,out_of_view};
 })()

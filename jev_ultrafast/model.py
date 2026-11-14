@@ -78,15 +78,42 @@ def action_space(actions):
     return elements, targets, controls
 
 
+NO_TARGET = (
+    "None of the offered elements is the right target for this operation: the needed element is not in view, "
+    "or every offered field already holds its requested value."
+)
+
+
 def choose(state, goal, history):
-    elements, targets, controls = action_space(state["actions"])
+    # A field the goal has no value for was skipped once. Code removes it from the fill candidates:
+    # the model cannot choose an omitted option, which is more reliable than asking it not to.
+    no_value = {h.get("action") for h in history if h.get("kind") == "skip"}
+    # An element under an overlay (cookie banner, popup) cannot be acted on. It is a fact, not a candidate;
+    # the overlay's own button stays offered.
+    covered = [a for a in state["actions"] if (a.get("rect") or {}).get("covered")]
+    hidden = {a["node"] for a in covered}
+    actions = [
+        a for a in state["actions"]
+        if a.get("node") not in hidden and not (a["kind"] == "fill" and a["label"] in no_value)
+    ]
+    elements, targets, controls = action_space(actions)
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
         "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
         "SELECT": "Select an observed dropdown value.",
     }
+    outside = state.get("out_of_view") or []
+
+    def reveals(key):
+        direction = {"SCROLL_DOWN": "below", "SCROLL_UP": "above"}.get(key)
+        fields = [f for f in outside if f["direction"] == direction]
+        if not fields:
+            return ""
+        names = ", ".join(f["label"][:30] + ("" if f["value"] else " (empty)") for f in fields[:6])
+        return f" Reveals form fields that are not in view: {names}."
+
     operations = {key: labels[key] for key in targets}
-    operations.update({key: value["label"] for key, value in controls.items()})
+    operations.update({key: value["label"] + reveals(key) for key, value in controls.items()})
     operations.update(DONE="Every requirement is visibly satisfied.", BLOCKED="No supported operation can progress.")
     questions = {
         "operation": {"type": "choice", "criteria": operations, "instructions": {"goal": goal, "rules": NEXT_ACTION}}
@@ -101,7 +128,8 @@ def choose(state, goal, history):
                     **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
                 }
                 for index, a in candidates.items()
-            },
+            }
+            | {"none": NO_TARGET},
             "instructions": {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
         }
     body = {
@@ -109,8 +137,12 @@ def choose(state, goal, history):
         "state": {
             "page": {k: state[k] for k in ("url", "title", "text")},
             "elements": elements,
+            "fields_out_of_view": [
+                {k: f[k] for k in ("label", "role", "value", "required", "direction")} for f in outside
+            ],
+            "elements_covered_by_an_overlay": sorted({a["label"].split(" → ")[0] for a in covered}),
             "recent_actions": [
-                {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
+                {k: h.get(k) for k in ("action", "kind", "text", "page_changed", "note")} for h in history[-10:]
             ],
         },
         "questions": questions,
@@ -122,12 +154,60 @@ def choose(state, goal, history):
     target = None
     target_answer = None
     probabilities = {}
+    composed = None
+
+    seen = {h.get("reveal") for h in history if h.get("reveal") is not None}
+    skipped = {h.get("action") for h in history if h.get("kind") == "skip"}
+
+    def reveal(prefer=None):
+        """Code owns the workflow: scroll the nearest still-empty out-of-view field to the centre, once each."""
+        fresh_fields = [f for f in outside if f["node"] not in seen and f["label"] not in skipped]
+        pool = [f for f in fresh_fields if not f["value"]] or fresh_fields
+        if prefer:
+            pool = [f for f in pool if f["direction"] == prefer] or pool
+        for field in pool:
+            key = "SCROLL_DOWN" if field["direction"] == "below" else "SCROLL_UP"
+            if key in controls:
+                controls[key]["reveal"] = field["node"]
+                controls[key]["label"] = "Scroll to reveal " + field["label"][:40]
+                return key
+        return None
+
     if operation in targets:
         # Unused target heads cannot cause an action. Validate the head selected by the operation.
-        target_answer = validate_choice(result["answers"].get(operation.lower() + "_target", {}), targets[operation])
+        offered = targets[operation]
+        target_answer = validate_choice(
+            result["answers"].get(operation.lower() + "_target", {}), {**offered, "none": None}
+        )
         target = target_answer["choice"]
+        if target == "none":
+            composed = reveal()
+            if composed is None:  # nothing to reveal: keep the old behaviour, best real candidate
+                target = max(offered, key=lambda index: target_answer["probabilities"][index])
+        elif operation == "TYPE_TEXT" and history:
+            last, picked = history[-1], offered[target]
+            # The exact loop seen on real forms: the operation head (rightly) wants more typing, but the only
+            # offered field was filled a moment ago. The two questions cannot see each other; code composes them.
+            retyping = (
+                last.get("kind") == "fill"
+                and last.get("choice") == picked["id"]
+                and bool(picked.get("value"))
+                and picked.get("value") == last.get("text")
+            )
+            if retyping:
+                composed = reveal()
+    elif operation in ("SCROLL_DOWN", "SCROLL_UP"):
+        reveal("below" if operation == "SCROLL_DOWN" else "above")
+
+    if composed:
+        operation, target = composed, None
+        choice = controls[composed]["id"]
+        probabilities = {choice: operation_answer["probabilities"].get(composed, 0.0)}
+    elif operation in targets:
         choice = targets[operation][target]["id"]
-        probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
+        probabilities = {
+            a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()
+        }
     else:
         choice = controls[operation]["id"] if operation in controls else operation
         probabilities[choice] = operation_answer["probabilities"][operation]
@@ -140,6 +220,7 @@ def choose(state, goal, history):
         "operation_probabilities": operation_answer["probabilities"],
         "target_probabilities": target_answer["probabilities"] if target_answer else {},
         "target_confidence": target_answer["confidence"] if target_answer else None,
+        "composed": composed,
         "raw_answers": result["answers"],
         "model": result["model"],
         "usage": result.get("usage", {}),
