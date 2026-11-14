@@ -21,8 +21,13 @@ class Agent:
         self.screenshots = screenshots or bool(record_dir)
         try:
             page = self.browser.observe(screenshot=self.screenshots)
-        except Exception:
-            self.browser.close()
+        except BaseException as error:
+            # No caller holds this Agent yet, so this is the only place that can close the tab.
+            # An interrupt counts, and a failed close must not replace the error that caused it.
+            try:
+                self.browser.close()
+            except BaseException as cleanup:
+                error.add_note(f"The browser tab this run opened may still be open: {cleanup!r}")
             raise
         self.state = dict(
             browser=self.browser,
