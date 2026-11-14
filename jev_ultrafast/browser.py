@@ -76,9 +76,12 @@ class Browser:
                 pass
         for attempt in range(10):
             try:
-                return browser_operation(
+                page = browser_operation(
                     {"operation": "observe", "session": self.session, "screenshot": screenshot}
                 )
+                if len(page.get("actions", [])) > 2 or attempt == 9:
+                    return page
+                time.sleep(0.1)
             except StalePage:
                 if attempt == 9:
                     raise
