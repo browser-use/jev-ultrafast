@@ -10,7 +10,7 @@ TYPE_TEXT sends the goal, selected field, visible page context, and recent actio
 
 ## Runtime
 
-One browser-side DOM snapshot supplies common HTML/ARIA roles, names, values, visible text, and executable targets. A WeakMap gives each actual node a code-owned identity; a Map keeps the live references used for execution. Replaced elements receive new identities, disconnected references are pruned, and navigation starts a new cache. These IDs are not CDP backend node IDs. Geometry is always read again immediately before input.
+One browser-side DOM snapshot supplies common HTML/ARIA roles, names, values, visible text, and executable targets. A WeakMap gives each actual node a code-owned identity; a Map keeps the live references used for execution. Replaced elements receive new identities, disconnected references are pruned, and navigation starts a new cache. These IDs are not CDP backend node IDs. Geometry is always read again immediately before input. A control is offered only if `elementFromPoint` at its centre, or at the centre of one of its client rects, lands inside it, which is the act guard's own test: a control clipped by a scroll container or under a banner is not offered only to be refused at input time, and a link wrapped over two lines is clicked on a visible fragment.
 
 The model sees visible text. Background focus emulation keeps animation frames running in the owned tab. Screenshots are optional and disabled in library calls by default; `screenshots=True` or `record_dir=...` enables them. The inspector enables them explicitly. A continuous screencast can record a run separately.
 
